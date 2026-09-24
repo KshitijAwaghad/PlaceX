@@ -8,5 +8,7 @@ backend/uploads/*
 !backend/uploads/resumes/
 backend/uploads/resumes/*
 !backend/uploads/resumes/.gitkeep
+backend/data/
 *.tsbuildinfo
-package.json
+frontend/vite.config.js
+frontend/vite.config.d.ts

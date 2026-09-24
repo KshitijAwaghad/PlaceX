@@ -11,7 +11,7 @@ function currentRoute(): Route {
 
 export default function App() {
   const [route, setRoute] = useState<Route>(currentRoute)
-  const { isAuthenticated, login, logout } = useAuth()
+  const { isAuthenticated, isCheckingSession, login, register, loginWithGoogle, logout } = useAuth()
 
   useEffect(() => {
     const handlePopState = () => setRoute(currentRoute())
@@ -19,14 +19,30 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
-  const navigate = (nextRoute: Route) => {
+  const navigate = (nextRoute: Route, replace = false) => {
     const path = nextRoute === 'login' ? '/login' : '/'
-    if (window.location.pathname !== path) window.history.pushState({}, '', path)
+    if (window.location.pathname !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path)
     setRoute(nextRoute)
   }
 
-  const completeMockLogin = () => {
-    login()
+  useEffect(() => {
+    if (isCheckingSession) return
+    if (!isAuthenticated && route !== 'login') navigate('login', true)
+    if (isAuthenticated && route === 'login') navigate('app', true)
+  }, [isAuthenticated, isCheckingSession, route])
+
+  const completeLogin = async (email: string, password: string) => {
+    await login(email, password)
+    navigate('app')
+  }
+
+  const completeRegistration = async (email: string, password: string) => {
+    await register(email, password)
+    navigate('app')
+  }
+
+  const completeGoogleLogin = async (credential: string) => {
+    await loginWithGoogle(credential)
     navigate('app')
   }
 
@@ -35,7 +51,7 @@ export default function App() {
     navigate('login')
   }
 
-  return route === 'login'
-    ? <Login onSuccess={completeMockLogin} onReturnToApp={() => navigate('app')} />
-    : <Dashboard isAuthenticated={isAuthenticated} onOpenLogin={() => navigate('login')} onLogout={completeLogout} />
+  if (isCheckingSession) return <main className="login-shell" aria-busy="true" />
+  if (!isAuthenticated) return <Login onLogin={completeLogin} onRegister={completeRegistration} onGoogleLogin={completeGoogleLogin} />
+  return <Dashboard isAuthenticated onLogout={completeLogout} />
 }

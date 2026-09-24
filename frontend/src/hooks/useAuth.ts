@@ -1,19 +1,55 @@
-import { useCallback, useState } from 'react'
-
-const MOCK_AUTH_STORAGE_KEY = 'placenexus_auth'
+import { useCallback, useEffect, useState } from 'react'
+import { clearAuthSession, getCurrentUser, getStoredSession, onAuthChange, registerAccount, saveAuthSession, signInAccount, signInWithGoogle } from '../services/auth'
 
 export function useAuth() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem(MOCK_AUTH_STORAGE_KEY) === 'true')
+  const [session, setSession] = useState(getStoredSession)
+  const [isCheckingSession, setIsCheckingSession] = useState(() => Boolean(getStoredSession()))
 
-  const login = useCallback(() => {
-    localStorage.setItem(MOCK_AUTH_STORAGE_KEY, 'true')
-    setIsAuthenticated(true)
+  useEffect(() => onAuthChange(() => setSession(getStoredSession())), [])
+
+  useEffect(() => {
+    if (!session) {
+      setIsCheckingSession(false)
+      return
+    }
+
+    let cancelled = false
+    setIsCheckingSession(true)
+    getCurrentUser(session.token)
+      .then((user) => {
+        if (!cancelled) saveAuthSession({ ...session, user })
+      })
+      .catch(() => {
+        if (!cancelled) clearAuthSession()
+      })
+      .finally(() => {
+        if (!cancelled) setIsCheckingSession(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const login = useCallback(async (email: string, password: string) => {
+    const nextSession = await signInAccount(email, password)
+    saveAuthSession(nextSession)
+    setSession(nextSession)
+  }, [])
+
+  const register = useCallback(async (email: string, password: string) => {
+    const nextSession = await registerAccount(email, password)
+    saveAuthSession(nextSession)
+    setSession(nextSession)
+  }, [])
+
+  const loginWithGoogle = useCallback(async (credential: string) => {
+    const nextSession = await signInWithGoogle(credential)
+    saveAuthSession(nextSession)
+    setSession(nextSession)
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem(MOCK_AUTH_STORAGE_KEY)
-    setIsAuthenticated(false)
+    clearAuthSession()
+    setSession(null)
   }, [])
 
-  return { isAuthenticated, login, logout }
+  return { isAuthenticated: Boolean(session), isCheckingSession, login, register, loginWithGoogle, logout }
 }

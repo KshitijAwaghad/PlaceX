@@ -1,0 +1,19 @@
+{
+  "name": "placenexus-backend",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "server": "node --env-file-if-exists=.env src/server.js",
+    "server:dev": "node --env-file-if-exists=.env --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "latest",
+    "express": "latest",
+    "google-auth-library": "^11.0.2",
+    "mammoth": "^1.12.2",
+    "multer": "latest",
+    "pdf-parse": "^2.4.5",
+    "tesseract.js": "^7.0.0"
+  }
+}

@@ -1,4 +1,5 @@
 import type { CareerAnalysis, LearningResource, ResumeData } from '../types/career'
+import { clearAuthSession, getAuthToken } from './auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
@@ -65,8 +66,11 @@ function normalizeAnalysis(payload: AnalysisPayload): CareerAnalysis {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
+  const headers = new Headers(init?.headers)
+  const token = getAuthToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
   try {
-    response = await fetch(`${API_URL}${path}`, init)
+    response = await fetch(`${API_URL}${path}`, { ...init, headers })
   } catch {
     throw new Error('Unable to connect to the analysis service. Please make sure the backend is running.')
   }
@@ -77,7 +81,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new Error('The analysis service returned an invalid response.')
   }
-  if (!response.ok) throw new Error(payload?.error?.message || 'Something went wrong.')
+  if (!response.ok) {
+    if (response.status === 401) clearAuthSession()
+    throw new Error(payload?.error?.message || 'Something went wrong.')
+  }
   if (!payload || !('data' in payload)) throw new Error('The analysis service returned an incomplete response.')
   return payload.data as T
 }
