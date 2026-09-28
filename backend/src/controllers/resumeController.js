@@ -1,4 +1,5 @@
 import { extractResumeText } from '../services/resumeParser.js';
+import { setProfileResume } from '../services/profileService.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -11,21 +12,24 @@ export function uploadResumeFile(req, res, next) {
       });
     }
 
-    return extractResumeText(req.file.path).then((resumeText) => res.status(201).json({
+    return extractResumeText(req.file.path).then(async (resumeText) => {
+      const resume = {
+        id: req.file.filename,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileType: path.extname(req.file.originalname).slice(1).toUpperCase(),
+        size: req.file.size,
+        uploadedAt: new Date().toISOString(),
+        resumeText
+      };
+      await setProfileResume(req.user.id, resume);
+      return res.status(201).json({
       success: true,
       message: 'Resume parsed and ready for analysis.',
       data: {
-        resume: {
-          id: req.file.filename,
-          originalName: req.file.originalname,
-          mimeType: req.file.mimetype,
-          fileType: path.extname(req.file.originalname).slice(1).toUpperCase(),
-          size: req.file.size,
-          uploadedAt: new Date().toISOString(),
-          resumeText
-        }
+        resume
       }
-    })).catch(next).finally(() => fs.unlink(req.file.path).catch(() => {}));
+    }); }).catch(next).finally(() => fs.unlink(req.file.path).catch(() => {}));
   } catch (error) {
     return next(error);
   }

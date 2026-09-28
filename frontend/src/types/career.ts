@@ -5,6 +5,7 @@ export type Plan30DayStep = { week: number; title: string; goal: string; tasks: 
 export type ScoreExplanation = { formula: string; components: { label: string; score: number; weight: number; contribution: number }[]; reasons: string[] }
 
 export type CareerAnalysis = {
+  historyId?: string
   matchPercentage: number
   matchingSkills: string[]
   missingSkills: string[]
@@ -19,3 +20,18 @@ export type CareerAnalysis = {
 }
 
 export type ResumeData = { originalName: string; fileType?: string; size: number; resumeText: string }
+
+export type CareerHistorySummary = {
+  id: string
+  resumeName: string
+  jobPreview: string
+  matchPercentage: number
+  missingSkills: string[]
+  createdAt: string
+}
+
+export type CareerHistoryDetail = CareerHistorySummary & {
+  resume: ResumeData
+  jobDescription: string
+  analysis: CareerAnalysis
+}

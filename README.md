@@ -32,9 +32,23 @@ The backend runs at `http://localhost:5000`. The Vite frontend runs at `http://l
 
 ## Accounts
 
-The app requires an account before its dashboard and career-analysis endpoints can be used. Use **Create account** on the login screen, then sign in with that email and password. Account records are stored locally in `backend/data/`, which is intentionally ignored by Git. Passwords are salted and hashed; they are never stored as plain text.
+The app requires an account before its dashboard and career-analysis endpoints can be used. Use **Create account** on the login screen, then sign in with that email and password. Account records are stored in MongoDB; configure `MONGODB_URI` in `backend/.env` before starting the server. Passwords are salted and hashed; they are never stored as plain text.
 
-For local development, the backend creates a persistent signing secret in that ignored data folder if `AUTH_SECRET` is absent. Set a long, unique `AUTH_SECRET` in `backend/.env` before deploying the application. Sessions last seven days by default; change this with `AUTH_TOKEN_TTL_SECONDS`.
+Set a long, unique `AUTH_SECRET` in `backend/.env` before deploying the application. When it is unset locally, PlaceNexus creates a persistent development signing secret in MongoDB. Sessions last seven days by default; change this with `AUTH_TOKEN_TTL_SECONDS`.
+
+### MongoDB and Gemini setup
+
+Create a MongoDB Atlas free cluster or run MongoDB locally, then configure the backend:
+
+```ini
+MONGODB_URI=mongodb://127.0.0.1:27017
+MONGODB_DB_NAME=placenexus
+AUTH_SECRET=replace-with-a-long-random-secret
+GEMINI_API_KEY=your-google-ai-studio-key
+GEMINI_MODEL=gemini-3.5-flash-lite
+```
+
+MongoDB stores user accounts and automatically creates unique indexes for email and Google subject IDs. Gemini is used only to personalize recommendations; the explainable score, evidence, gaps, simulator, and roadmap still work when no Gemini key is supplied.
 
 ### Google Sign-In setup
 

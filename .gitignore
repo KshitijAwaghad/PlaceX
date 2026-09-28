@@ -1,6 +1,8 @@
 node_modules/
 frontend/dist/
 backend/dist/
+build/
+coverage/
 .env
 .env.*
 !.env.example
@@ -9,6 +11,8 @@ backend/uploads/*
 backend/uploads/resumes/*
 !backend/uploads/resumes/.gitkeep
 backend/data/
+uploads/
+*.log
 *.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts

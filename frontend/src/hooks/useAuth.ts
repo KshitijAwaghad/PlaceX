@@ -51,5 +51,5 @@ export function useAuth() {
     setSession(null)
   }, [])
 
-  return { isAuthenticated: Boolean(session), isCheckingSession, login, register, loginWithGoogle, logout }
+  return { user: session?.user || null, isAuthenticated: Boolean(session), isCheckingSession, login, register, loginWithGoogle, logout }
 }

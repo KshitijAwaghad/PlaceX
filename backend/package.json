@@ -12,6 +12,7 @@
     "express": "latest",
     "google-auth-library": "^11.0.2",
     "mammoth": "^1.12.2",
+    "mongodb": "^6.21.0",
     "multer": "latest",
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0"

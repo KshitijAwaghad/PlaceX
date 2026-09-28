@@ -1,4 +1,5 @@
-import type { CareerAnalysis, LearningResource, ResumeData } from '../types/career'
+import type { CareerAnalysis, CareerHistoryDetail, CareerHistorySummary, LearningResource, ResumeData } from '../types/career'
+import type { InAppNotification, PlacementApplication, PlacementJob, ProfileCompletion, StudentProfile } from '../types/placement'
 import { clearAuthSession, getAuthToken } from './auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
@@ -50,6 +51,7 @@ function normalizeAnalysis(payload: AnalysisPayload): CareerAnalysis {
     : defaultBreakdown
 
   return {
+    historyId: typeof payload.historyId === 'string' ? payload.historyId : undefined,
     matchPercentage: Number(payload.matchPercentage ?? 0),
     matchingSkills: stringArray(payload.matchingSkills),
     missingSkills: stringArray(payload.missingSkills),
@@ -61,6 +63,34 @@ function normalizeAnalysis(payload: AnalysisPayload): CareerAnalysis {
     prioritizedGaps: Array.isArray(payload.prioritizedGaps) ? payload.prioritizedGaps : [],
     recommendations: stringArray(payload.recommendations),
     plan30Days: normalizePlan(payload.plan30Days)
+  }
+}
+
+function normalizeHistorySummary(value: unknown): CareerHistorySummary {
+  const item = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  return {
+    id: String(item.id || ''),
+    resumeName: String(item.resumeName || 'Uploaded resume'),
+    jobPreview: String(item.jobPreview || ''),
+    matchPercentage: Number(item.matchPercentage || 0),
+    missingSkills: stringArray(item.missingSkills),
+    createdAt: String(item.createdAt || '')
+  }
+}
+
+function normalizeHistoryDetail(value: unknown): CareerHistoryDetail {
+  const item = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const resume = item.resume && typeof item.resume === 'object' ? item.resume as Partial<ResumeData> : {}
+  return {
+    ...normalizeHistorySummary(item),
+    resume: {
+      originalName: String(resume.originalName || 'Uploaded resume'),
+      fileType: typeof resume.fileType === 'string' ? resume.fileType : undefined,
+      size: Number(resume.size || 0),
+      resumeText: String(resume.resumeText || '')
+    },
+    jobDescription: String(item.jobDescription || ''),
+    analysis: normalizeAnalysis((item.analysis || {}) as AnalysisPayload)
   }
 }
 
@@ -95,10 +125,65 @@ export function uploadResume(file: File) {
   return request<{ resume: ResumeData }>('/resume/upload', { method: 'POST', body })
 }
 
-export function analyzeResume(resumeText: string, jobDescription: string, addedSkills: string[] = []) {
-  return request<AnalysisPayload>('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resumeText, jobDescription, addedSkills }) }).then(normalizeAnalysis)
+export function analyzeResume(resume: ResumeData, jobDescription: string, addedSkills: string[] = []) {
+  return request<AnalysisPayload>('/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      resumeText: resume.resumeText,
+      resumeName: resume.originalName,
+      resumeFileType: resume.fileType,
+      resumeSize: resume.size,
+      jobDescription,
+      addedSkills
+    })
+  }).then(normalizeAnalysis)
 }
 
 export function simulateCareer(resumeText: string, description: string, addedSkills: string[]) {
   return request<{ readinessScore: number; scoreChange: number; analysis?: AnalysisPayload }>('/career/simulate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resumeText, jobDescription: description, addedSkills }) }).then((result) => ({ ...result, analysis: normalizeAnalysis(result.analysis || {}) }))
+}
+
+export function getCareerHistory() {
+  return request<{ items?: unknown[] }>('/career/history').then((result) => Array.isArray(result.items) ? result.items.map(normalizeHistorySummary).filter((item) => item.id) : [])
+}
+
+export function getCareerHistoryItem(historyId: string) {
+  return request<unknown>(`/career/history/${encodeURIComponent(historyId)}`).then(normalizeHistoryDetail)
+}
+
+export function getStudentProfile() {
+  return request<{ profile: StudentProfile; completion: ProfileCompletion }>('/profile')
+}
+
+export function updateStudentProfile(profile: Partial<StudentProfile>) {
+  return request<{ profile: StudentProfile; completion: ProfileCompletion }>('/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) })
+}
+
+export function getPlacementJobs() {
+  return request<{ items: PlacementJob[] }>('/jobs').then((result) => result.items || [])
+}
+
+export function getApplications() {
+  return request<{ items: PlacementApplication[] }>('/applications').then((result) => result.items || [])
+}
+
+export function applyToPlacementJob(jobId: string) {
+  return request<PlacementApplication>('/applications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId }) })
+}
+
+export function updatePlacementApplication(applicationId: string, changes: Partial<Pick<PlacementApplication, 'status' | 'notes'>>) {
+  return request<PlacementApplication>(`/applications/${encodeURIComponent(applicationId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes) })
+}
+
+export function getNotifications() {
+  return request<{ items: InAppNotification[]; unreadCount: number }>('/notifications')
+}
+
+export function markNotificationRead(notificationId: string) {
+  return request<InAppNotification>(`/notifications/${encodeURIComponent(notificationId)}/read`, { method: 'PUT' })
+}
+
+export function markAllNotificationsRead() {
+  return request<{ updated: number }>('/notifications/read-all', { method: 'PUT' })
 }

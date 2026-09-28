@@ -1,18 +1,9 @@
 import { createHmac, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { OAuth2Client } from 'google-auth-library';
+import { getSystemSettingsCollection, getUsersCollection } from './database.js';
 
-const backendDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const dataDirectory = process.env.AUTH_DATA_DIR
-  ? resolve(process.env.AUTH_DATA_DIR)
-  : join(backendDirectory, 'data');
-const usersFile = join(dataDirectory, 'users.json');
-const secretFile = join(dataDirectory, 'auth-secret');
 const tokenLifetimeSeconds = Number(process.env.AUTH_TOKEN_TTL_SECONDS) || 60 * 60 * 24 * 7;
 
-let userWriteQueue = Promise.resolve();
 let tokenSecretPromise;
 const googleClient = new OAuth2Client();
 const googleReadiness = {
@@ -35,7 +26,7 @@ function normalizeEmail(email) {
 }
 
 function publicUser(user) {
-  return { id: user.id, email: user.email, createdAt: user.createdAt };
+  return { id: String(user._id), email: user.email, createdAt: user.createdAt };
 }
 
 function getGoogleClientId() {
@@ -109,36 +100,6 @@ export async function warmGoogleIdentityService() {
   }
 }
 
-async function ensureDataDirectory() {
-  await mkdir(dataDirectory, { recursive: true });
-}
-
-async function readUserStore() {
-  await ensureDataDirectory();
-  try {
-    const contents = await readFile(usersFile, 'utf8');
-    const store = JSON.parse(contents);
-    if (!store || !Array.isArray(store.users)) throw new Error('Invalid user store.');
-    return store;
-  } catch (error) {
-    if (error?.code === 'ENOENT') return { version: 1, users: [] };
-    if (error instanceof SyntaxError || error?.message === 'Invalid user store.') {
-      throw authError('The account store could not be read.', 500, 'AUTH_STORE_UNAVAILABLE');
-    }
-    throw error;
-  }
-}
-
-async function writeUserStore(store) {
-  await writeFile(usersFile, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
-}
-
-function withUserWriteLock(operation) {
-  const pending = userWriteQueue.then(operation, operation);
-  userWriteQueue = pending.then(() => undefined, () => undefined);
-  return pending;
-}
-
 function derivePassword(password, salt) {
   return new Promise((resolveHash, reject) => {
     scrypt(password, salt, 64, { N: 16_384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 }, (error, derivedKey) => {
@@ -163,20 +124,27 @@ async function passwordMatches(password, passwordHash) {
 }
 
 async function getTokenSecret() {
-  if (process.env.AUTH_SECRET?.trim()) return Buffer.from(process.env.AUTH_SECRET.trim(), 'utf8');
+  const secret = process.env.AUTH_SECRET?.trim();
+  if (secret) return Buffer.from(secret, 'utf8');
+
   if (!tokenSecretPromise) {
     tokenSecretPromise = (async () => {
-      await ensureDataDirectory();
-      try {
-        return Buffer.from((await readFile(secretFile, 'utf8')).trim(), 'utf8');
-      } catch (error) {
-        if (error?.code !== 'ENOENT') throw error;
-        const secret = randomBytes(48).toString('base64url');
-        await writeFile(secretFile, secret, { encoding: 'utf8', mode: 0o600 });
-        console.warn('AUTH_SECRET is not set. A local development signing secret was created in the ignored auth data folder.');
-        return Buffer.from(secret, 'utf8');
-      }
-    })();
+      const settings = await getSystemSettingsCollection();
+      const settingId = 'auth-token-secret';
+      const generatedSecret = randomBytes(48).toString('base64url');
+      await settings.updateOne(
+        { _id: settingId },
+        { $setOnInsert: { value: generatedSecret, createdAt: new Date().toISOString() } },
+        { upsert: true }
+      );
+      const stored = await settings.findOne({ _id: settingId });
+      if (!stored?.value) throw authError('The authentication signing secret could not be initialized.', 503, 'AUTH_SECRET_UNAVAILABLE');
+      console.warn('AUTH_SECRET is not set. A persistent development signing secret was created in MongoDB.');
+      return Buffer.from(stored.value, 'utf8');
+    })().catch((error) => {
+      tokenSecretPromise = undefined;
+      throw error;
+    });
   }
   return tokenSecretPromise;
 }
@@ -195,27 +163,28 @@ function decodePayload(encodedPayload) {
 
 export async function registerUser(email, password) {
   const normalizedEmail = normalizeEmail(email);
-  return withUserWriteLock(async () => {
-    const store = await readUserStore();
-    if (store.users.some((user) => user.email === normalizedEmail)) {
+  const users = await getUsersCollection();
+  const user = {
+    _id: randomUUID(),
+    email: normalizedEmail,
+    passwordHash: await createPasswordHash(password),
+    createdAt: new Date().toISOString()
+  };
+  try {
+    await users.insertOne(user);
+    return publicUser(user);
+  } catch (error) {
+    if (error?.code === 11000) {
       throw authError('An account with that email already exists.', 409, 'EMAIL_ALREADY_REGISTERED');
     }
-    const user = {
-      id: randomUUID(),
-      email: normalizedEmail,
-      passwordHash: await createPasswordHash(password),
-      createdAt: new Date().toISOString()
-    };
-    store.users.push(user);
-    await writeUserStore(store);
-    return publicUser(user);
-  });
+    throw error;
+  }
 }
 
 export async function authenticateUser(email, password) {
   const normalizedEmail = normalizeEmail(email);
-  const store = await readUserStore();
-  const user = store.users.find((entry) => entry.email === normalizedEmail);
+  const users = await getUsersCollection();
+  const user = await users.findOne({ email: normalizedEmail });
   if (!user || !(await passwordMatches(password, user.passwordHash))) {
     throw authError('Email or password is incorrect.', 401, 'INVALID_CREDENTIALS');
   }
@@ -239,40 +208,44 @@ export async function authenticateGoogleUser(credential) {
   }
 
   const email = normalizeEmail(payload.email);
-  return withUserWriteLock(async () => {
-    const store = await readUserStore();
-    let user = store.users.find((entry) => entry.googleSubject === payload.sub);
-    let storeChanged = false;
+  const users = await getUsersCollection();
+  let user = await users.findOne({ googleSubject: payload.sub });
 
-    if (user) {
-      if (user.email !== email) {
-        const accountUsingEmail = store.users.find((entry) => entry.email === email && entry.id !== user.id);
-        if (accountUsingEmail) throw authError('That Google account is already linked to another PlaceNexus account.', 409, 'GOOGLE_ACCOUNT_CONFLICT');
-        user.email = email;
-        storeChanged = true;
-      }
-    } else {
-      user = store.users.find((entry) => entry.email === email);
-      if (user) {
-        if (user.googleSubject && user.googleSubject !== payload.sub) {
-          throw authError('That email is already linked to another Google account.', 409, 'GOOGLE_ACCOUNT_CONFLICT');
-        }
-        user.googleSubject = payload.sub;
-      } else {
-        user = {
-          id: randomUUID(),
-          email,
-          googleSubject: payload.sub,
-          createdAt: new Date().toISOString()
-        };
-        store.users.push(user);
-      }
-      storeChanged = true;
+  if (user) {
+    if (user.email !== email) {
+      const accountUsingEmail = await users.findOne({ email, _id: { $ne: user._id } });
+      if (accountUsingEmail) throw authError('That Google account is already linked to another PlaceNexus account.', 409, 'GOOGLE_ACCOUNT_CONFLICT');
+      await users.updateOne({ _id: user._id }, { $set: { email } });
+      user.email = email;
     }
-
-    if (storeChanged) await writeUserStore(store);
     return publicUser(user);
-  });
+  }
+
+  user = await users.findOne({ email });
+  if (user) {
+    if (user.googleSubject && user.googleSubject !== payload.sub) {
+      throw authError('That email is already linked to another Google account.', 409, 'GOOGLE_ACCOUNT_CONFLICT');
+    }
+    await users.updateOne({ _id: user._id }, { $set: { googleSubject: payload.sub } });
+    user.googleSubject = payload.sub;
+    return publicUser(user);
+  }
+
+  const newUser = {
+    _id: randomUUID(),
+    email,
+    googleSubject: payload.sub,
+    createdAt: new Date().toISOString()
+  };
+  try {
+    await users.insertOne(newUser);
+    return publicUser(newUser);
+  } catch (error) {
+    if (error?.code === 11000) {
+      throw authError('That Google account is already linked to another PlaceNexus account.', 409, 'GOOGLE_ACCOUNT_CONFLICT');
+    }
+    throw error;
+  }
 }
 
 export async function createSession(user) {
@@ -306,8 +279,8 @@ export async function getSessionUser(token) {
     throw authError('Your session has expired. Please sign in again.', 401, 'SESSION_EXPIRED');
   }
 
-  const store = await readUserStore();
-  const user = store.users.find((entry) => entry.id === payload.sub && entry.email === payload.email);
+  const users = await getUsersCollection();
+  const user = await users.findOne({ _id: payload.sub, email: payload.email });
   if (!user) throw authError('Your account is no longer available.', 401, 'INVALID_SESSION');
   return publicUser(user);
 }

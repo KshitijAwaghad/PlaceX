@@ -153,12 +153,55 @@ function buildAnalysis(resumeText, jobDescription, addedSkills = [], ai = {}) {
 
 function parseJson(content) { return JSON.parse(content.replace(/^```json\s*|\s*```$/g, '').trim()); }
 
+function geminiResponseText(response) {
+  return response?.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text || '')
+    .join('')
+    .trim();
+}
+
+async function getGeminiRecommendations(resumeText, jobDescription) {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  const prompt = `You are a precise career analyst. Compare the resume and job description below. Return JSON only, exactly in this shape: {"recommendations":["recommendation 1","recommendation 2","recommendation 3"]}. Every recommendation must be concise, actionable, and based only on evidence in the resume or a requirement in the job description. Do not invent experience, projects, or qualifications.\n\nRESUME:\n${resumeText}\n\nJOB DESCRIPTION:\n${jobDescription}`;
+  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '');
+    throw new Error(`Gemini API returned ${response.status}${details ? `: ${details.slice(0, 240)}` : '.'}`);
+  }
+
+  const responseText = geminiResponseText(await response.json());
+  if (!responseText) throw new Error('Gemini API returned no recommendation content.');
+  const result = parseJson(responseText);
+  if (!Array.isArray(result?.recommendations)) throw new Error('Gemini API returned an invalid recommendation response.');
+  return { recommendations: result.recommendations.filter((item) => typeof item === 'string' && item.trim()).slice(0, 3) };
+}
+
 export async function analyzeCareer({ resumeText, jobDescription, addedSkills = [] }) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return buildAnalysis(resumeText, jobDescription, addedSkills);
   const fallback = buildAnalysis(resumeText, jobDescription, addedSkills);
-  const prompt = `Compare the resume and job description. Return valid JSON containing only recommendations (string[]). Recommendations must be specific to actual resume evidence and job requirements.\n\nRESUME:\n${resumeText}\n\nJOB DESCRIPTION:\n${jobDescription}`;
-  const response = await fetch(`${process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: process.env.OPENAI_MODEL || 'gpt-4o-mini', temperature: 0.2, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'You are a precise career analyst.' }, { role: 'user', content: prompt }] }) });
-  if (!response.ok) throw new Error(`AI provider returned ${response.status}.`);
-  return buildAnalysis(resumeText, jobDescription, addedSkills, parseJson((await response.json()).choices?.[0]?.message?.content || '{}')) || fallback;
+  if (!process.env.GEMINI_API_KEY?.trim()) return fallback;
+  try {
+    const gemini = await getGeminiRecommendations(resumeText, jobDescription);
+    return buildAnalysis(resumeText, jobDescription, addedSkills, gemini || {});
+  } catch (error) {
+    console.warn(`Gemini recommendations unavailable; using deterministic recommendations. ${error.message}`);
+    return fallback;
+  }
 }

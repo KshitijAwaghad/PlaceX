@@ -11,7 +11,7 @@ function currentRoute(): Route {
 
 export default function App() {
   const [route, setRoute] = useState<Route>(currentRoute)
-  const { isAuthenticated, isCheckingSession, login, register, loginWithGoogle, logout } = useAuth()
+  const { user, isAuthenticated, isCheckingSession, login, register, loginWithGoogle, logout } = useAuth()
 
   useEffect(() => {
     const handlePopState = () => setRoute(currentRoute())
@@ -20,7 +20,7 @@ export default function App() {
   }, [])
 
   const navigate = (nextRoute: Route, replace = false) => {
-    const path = nextRoute === 'login' ? '/login' : '/'
+    const path = nextRoute === 'login' ? '/login' : '/placement-hub'
     if (window.location.pathname !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path)
     setRoute(nextRoute)
   }
@@ -28,7 +28,7 @@ export default function App() {
   useEffect(() => {
     if (isCheckingSession) return
     if (!isAuthenticated && route !== 'login') navigate('login', true)
-    if (isAuthenticated && route === 'login') navigate('app', true)
+    if (isAuthenticated && (route === 'login' || window.location.pathname === '/')) navigate('app', true)
   }, [isAuthenticated, isCheckingSession, route])
 
   const completeLogin = async (email: string, password: string) => {
@@ -53,5 +53,5 @@ export default function App() {
 
   if (isCheckingSession) return <main className="login-shell" aria-busy="true" />
   if (!isAuthenticated) return <Login onLogin={completeLogin} onRegister={completeRegistration} onGoogleLogin={completeGoogleLogin} />
-  return <Dashboard isAuthenticated onLogout={completeLogout} />
+  return <Dashboard isAuthenticated studentEmail={user?.email} onLogout={completeLogout} />
 }
