@@ -1,4 +1,5 @@
 import { getStudentProfilesCollection } from './database.js';
+import { normalizeLocations, normalizeProfileSkills, normalizeRoles } from './profileNormalization.js';
 
 function validationError(message) {
   const error = new Error(message);
@@ -15,9 +16,26 @@ function text(value, maxLength) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
-function list(value, maxItems = 30, maxLength = 80) {
-  const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
-  return [...new Set(source.map((item) => text(item, maxLength)).filter(Boolean))].slice(0, maxItems);
+function skillState(value) {
+  const normalized = normalizeProfileSkills(value);
+  return {
+    skills: normalized.skills.map((skill) => text(skill, 80)).slice(0, 50),
+    legacySkills: normalized.legacySkills.map((skill) => text(skill, 80)).slice(0, 50)
+  };
+}
+
+function savedSkills(value) {
+  const normalized = skillState(value);
+  if (normalized.legacySkills.length) {
+    throw validationError(`Choose skills from the catalog instead of unsupported entries: ${normalized.legacySkills.join(', ')}.`);
+  }
+  return normalized.skills;
+}
+
+function storedNumber(value, integer = false) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && (!integer || Number.isInteger(number)) ? number : null;
 }
 
 function numberOrNull(value, label, min, max, integer = false) {
@@ -35,16 +53,63 @@ function phone(value) {
   return cleaned;
 }
 
-function projects(value) {
+const socialLinkDefinitions = Object.freeze({
+  github: { label: 'GitHub', domain: 'github.com' },
+  linkedin: { label: 'LinkedIn', domain: 'linkedin.com' },
+  portfolio: { label: 'Portfolio' },
+  leetcode: { label: 'LeetCode', domain: 'leetcode.com' }
+});
+
+export const emptySocialLinks = Object.freeze({ github: '', linkedin: '', portfolio: '', leetcode: '' });
+
+function socialUrl(value, definition) {
+  const candidate = text(value, 300);
+  if (!candidate) return '';
+  let parsed;
+  try { parsed = new URL(candidate); } catch { throw validationError(`${definition.label} must be a valid http or https URL.`); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+    throw validationError(`${definition.label} must be a valid http or https URL.`);
+  }
+  if (definition.domain && parsed.hostname !== definition.domain && !parsed.hostname.endsWith(`.${definition.domain}`)) {
+    throw validationError(`Enter a ${definition.label} URL hosted on ${definition.domain}.`);
+  }
+  return parsed.toString();
+}
+
+export function normalizeSocialLinks(value, { validate = true } = {}) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(Object.entries(socialLinkDefinitions).map(([key, definition]) => {
+    try { return [key, socialUrl(source[key], definition)]; }
+    catch (error) {
+      if (validate) throw error;
+      return [key, ''];
+    }
+  }));
+}
+
+function storedProfilePhotoUrl(value) {
+  const url = text(value, 300);
+  return /^\/profile-photos\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\.(?:jpe?g|png|webp)$/i.test(url) ? url : null;
+}
+
+function projects(value, validateTechnologies = false) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 10).map((project) => {
     const item = project && typeof project === 'object' ? project : {};
+    const technologies = skillState(item.technologies ?? item.skills);
+    if (validateTechnologies && technologies.legacySkills.length) {
+      throw validationError(`Choose project technologies from the catalog instead of unsupported entries: ${technologies.legacySkills.join(', ')}.`);
+    }
     return {
       title: text(item.title, 120),
       description: text(item.description, 500),
-      url: text(item.url, 300)
+      technologies: technologies.skills,
+      githubUrl: text(item.githubUrl, 300),
+      liveUrl: text(item.liveUrl || item.url, 300),
+      startDate: text(item.startDate, 10),
+      endDate: text(item.endDate, 10)
     };
-  }).filter((project) => project.title || project.description || project.url);
+  }).filter((project) => project.title || project.description || project.technologies.length || project.githubUrl || project.liveUrl);
 }
 
 function normalizePartial(input) {
@@ -57,28 +122,33 @@ function normalizePartial(input) {
   if (own(input, 'cgpa')) next.cgpa = numberOrNull(input.cgpa, 'CGPA', 0, 10);
   if (own(input, 'backlogs')) next.backlogs = numberOrNull(input.backlogs, 'Backlogs', 0, 50, true);
   if (own(input, 'graduationYear')) next.graduationYear = numberOrNull(input.graduationYear, 'Graduation year', 2020, 2045, true);
-  if (own(input, 'skills')) next.skills = list(input.skills, 50);
-  if (own(input, 'projects')) next.projects = projects(input.projects);
-  if (own(input, 'preferredRoles')) next.preferredRoles = list(input.preferredRoles, 15);
-  if (own(input, 'preferredLocations')) next.preferredLocations = list(input.preferredLocations, 15);
+  if (own(input, 'skills')) next.skills = savedSkills(input.skills);
+  if (own(input, 'projects')) next.projects = projects(input.projects, true);
+  if (own(input, 'preferredRoles')) next.preferredRoles = normalizeRoles(input.preferredRoles).map((role) => text(role, 80)).slice(0, 15);
+  if (own(input, 'preferredLocations')) next.preferredLocations = normalizeLocations(input.preferredLocations).map((location) => text(location, 80)).slice(0, 15);
+  if (own(input, 'socialLinks')) next.socialLinks = normalizeSocialLinks(input.socialLinks);
   return next;
 }
 
 function toProfile(user, document) {
   const profile = document || {};
+  const skills = skillState(profile.skills);
   return {
     fullName: profile.fullName || '',
     phone: profile.phone || '',
     branch: profile.branch || '',
     college: profile.college || '',
-    cgpa: profile.cgpa ?? null,
-    backlogs: profile.backlogs ?? null,
-    graduationYear: profile.graduationYear ?? null,
-    skills: Array.isArray(profile.skills) ? profile.skills : [],
-    projects: Array.isArray(profile.projects) ? profile.projects : [],
-    preferredRoles: Array.isArray(profile.preferredRoles) ? profile.preferredRoles : [],
-    preferredLocations: Array.isArray(profile.preferredLocations) ? profile.preferredLocations : [],
+    cgpa: storedNumber(profile.cgpa),
+    backlogs: storedNumber(profile.backlogs, true),
+    graduationYear: storedNumber(profile.graduationYear, true),
+    skills: skills.skills,
+    legacySkills: skills.legacySkills,
+    projects: projects(profile.projects),
+    preferredRoles: normalizeRoles(profile.preferredRoles),
+    preferredLocations: normalizeLocations(profile.preferredLocations),
     resume: profile.resume || null,
+    profilePhotoUrl: storedProfilePhotoUrl(profile.profilePhotoUrl),
+    socialLinks: normalizeSocialLinks(profile.socialLinks, { validate: false }),
     email: user.email
   };
 }
@@ -98,6 +168,7 @@ export function profileCompletion(profile) {
   return {
     percentage: Math.round((completed / fields.length) * 100),
     fields,
+    missingFields: fields.filter((field) => !field.completed).map((field) => field.label),
     missingMandatory: fields.filter((field) => field.mandatory && !field.completed).map((field) => field.label)
   };
 }
@@ -105,6 +176,11 @@ export function profileCompletion(profile) {
 export async function getStudentProfile(user) {
   const document = await (await getStudentProfilesCollection()).findOne({ userId: user.id });
   return toProfile(user, document);
+}
+
+export async function listStudentProfiles() {
+  const profiles = await (await getStudentProfilesCollection()).find({}).toArray();
+  return profiles.map((profile) => ({ ...profile, id: String(profile._id) }));
 }
 
 export async function updateStudentProfile(user, input) {
@@ -129,4 +205,25 @@ export async function setProfileResume(userId, resume) {
     },
     { upsert: true }
   );
+}
+
+export async function replaceProfilePhoto(userId, profilePhotoUrl) {
+  const profiles = await getStudentProfilesCollection();
+  const current = await profiles.findOne({ userId }, { projection: { profilePhotoUrl: 1 } });
+  const now = new Date().toISOString();
+  await profiles.updateOne(
+    { userId },
+    { $set: { profilePhotoUrl: storedProfilePhotoUrl(profilePhotoUrl), updatedAt: now }, $setOnInsert: { userId, createdAt: now } },
+    { upsert: true }
+  );
+  return storedProfilePhotoUrl(current?.profilePhotoUrl);
+}
+
+export async function removeProfilePhoto(userId) {
+  const profiles = await getStudentProfilesCollection();
+  const current = await profiles.findOne({ userId }, { projection: { profilePhotoUrl: 1 } });
+  if (!current) return null;
+  const now = new Date().toISOString();
+  await profiles.updateOne({ userId }, { $unset: { profilePhotoUrl: '' }, $set: { updatedAt: now } });
+  return storedProfilePhotoUrl(current.profilePhotoUrl);
 }

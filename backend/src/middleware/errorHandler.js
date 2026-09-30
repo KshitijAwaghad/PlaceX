@@ -5,16 +5,17 @@ export function notFoundHandler(req, res) {
   });
 }
 
-export function errorHandler(error, _req, res, _next) {
+export function errorHandler(error, req, res, _next) {
   if (error?.name === 'MulterError') {
-    const message = error.code === 'LIMIT_FILE_SIZE' ? 'Resume files must be 10MB or smaller.' : error.message;
+    const isProfilePhoto = String(req.originalUrl || '').startsWith('/profile/photo');
+    const message = error.code === 'LIMIT_FILE_SIZE' ? isProfilePhoto ? 'Profile photos must be 3MB or smaller.' : 'Resume files must be 10MB or smaller.' : error.message;
     return res.status(400).json({ success: false, error: { code: error.code, message } });
   }
 
-  if (error?.code === 'INVALID_FILE_TYPE') {
+  if (error?.code === 'INVALID_FILE_TYPE' || error?.code === 'INVALID_PROFILE_PHOTO') {
     return res.status(400).json({
       success: false,
-      error: { code: 'INVALID_FILE_TYPE', message: error.message }
+      error: { code: error.code, message: error.message }
     });
   }
 

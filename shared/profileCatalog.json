@@ -1,0 +1,42 @@
+{
+  "skillCategories": [
+    { "name": "Programming Languages", "skills": ["C", "C++", "C#", "Java", "Python", "JavaScript", "TypeScript", "Go", "Rust", "Kotlin", "Swift", "PHP", "Ruby", "Dart", "R", "MATLAB", "SQL"] },
+    { "name": "Frontend", "skills": ["HTML", "CSS", "React", "Angular", "Vue.js", "Next.js", "Redux", "Tailwind CSS", "Bootstrap", "Material UI", "jQuery"] },
+    { "name": "Backend", "skills": ["Node.js", "Express.js", "NestJS", "Spring", "Spring Boot", "Django", "Flask", "FastAPI", "ASP.NET", "Laravel", "REST API", "GraphQL"] },
+    { "name": "Databases", "skills": ["MySQL", "PostgreSQL", "MongoDB", "SQLite", "Oracle", "SQL Server", "Redis", "Firebase", "Supabase"] },
+    { "name": "Cloud", "skills": ["AWS", "Microsoft Azure", "Google Cloud", "AWS EC2", "AWS S3", "AWS Lambda", "AWS Rekognition", "AWS Polly", "Azure Functions", "Docker", "Kubernetes"] },
+    { "name": "DevOps", "skills": ["Git", "GitHub", "GitLab", "CI/CD", "Jenkins", "GitHub Actions", "Terraform", "Linux", "Bash"] },
+    { "name": "Data & Analytics", "skills": ["Power BI", "Tableau", "Excel", "Pandas", "NumPy", "Matplotlib", "Seaborn", "Scikit-learn", "TensorFlow", "PyTorch", "Machine Learning", "Data Analysis", "Data Visualization"] },
+    { "name": "AI, ML & NLP", "skills": ["Artificial Intelligence", "Deep Learning", "NLP", "Generative AI", "LLM", "OpenAI", "Gemini", "Rasa", "Hugging Face", "LangChain", "Computer Vision", "OpenCV"] },
+    { "name": "Web & APIs", "skills": ["JSON", "JWT", "OAuth", "WebSockets"] },
+    { "name": "Testing", "skills": ["JUnit", "Jest", "React Testing Library", "Cypress", "Selenium", "Postman"] },
+    { "name": "Tools", "skills": ["VS Code", "IntelliJ IDEA", "Eclipse", "Figma", "Jira"] },
+    { "name": "Embedded & Electronics", "skills": ["Embedded Systems", "Arduino", "Raspberry Pi", "ESP32", "STM32", "ARM", "ARM7", "ARM9", "UART", "SPI", "I2C", "CAN", "MQTT", "IoT", "PCB Design", "MATLAB/Simulink"] }
+  ],
+  "skillAliases": {
+    "react.js": "React",
+    "reactjs": "React",
+    "node": "Node.js",
+    "nodejs": "Node.js",
+    "node js": "Node.js",
+    "express": "Express.js",
+    "rest apis": "REST API",
+    "restful api": "REST API",
+    "restful apis": "REST API",
+    "js": "JavaScript",
+    "ts": "TypeScript",
+    "c sharp": "C#",
+    "csharp": "C#",
+    "dotnet": "ASP.NET",
+    "azure": "Microsoft Azure",
+    "gcp": "Google Cloud",
+    "machine-learning": "Machine Learning",
+    "scikit learn": "Scikit-learn",
+    "sklearn": "Scikit-learn",
+    "matlab simulink": "MATLAB/Simulink"
+  },
+  "roleOptions": ["Software Engineer", "Software Developer", "Full Stack Developer", "Frontend Developer", "Backend Developer", "React Developer", "Node.js Developer", "Java Developer", "Python Developer", "Data Analyst", "Data Scientist", "Machine Learning Engineer", "AI Engineer", "DevOps Engineer", "Cloud Engineer", "Cybersecurity Analyst", "QA Engineer", "Automation Test Engineer", "Embedded Systems Engineer", "IoT Engineer", "Business Analyst"],
+  "roleAliases": { "fullstackdev": "Full Stack Developer", "full stack dev": "Full Stack Developer", "software dev": "Software Developer", "frontend dev": "Frontend Developer", "backend dev": "Backend Developer", "ml engineer": "Machine Learning Engineer", "ai/ml engineer": "AI Engineer" },
+  "locationOptions": ["Pune", "Mumbai", "Bengaluru", "Hyderabad", "Chennai", "Delhi", "New Delhi", "Noida", "Gurugram", "Kolkata", "Ahmedabad", "Jaipur", "Nagpur", "Nashik", "Indore", "Kochi", "Coimbatore", "Remote"],
+  "locationAliases": { "bangalore": "Bengaluru", "gurgaon": "Gurugram", "new delhi": "New Delhi", "work from home": "Remote", "wfh": "Remote" }
+}

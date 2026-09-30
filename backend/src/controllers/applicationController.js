@@ -1,6 +1,6 @@
 import { createApplication, deleteApplication, findApplication, listApplications, updateApplication } from '../services/applicationService.js';
 import { evaluateEligibility } from '../services/eligibilityService.js';
-import { findJob } from '../services/jobService.js';
+import { findJob, isValidApplicationUrl, jobSourceTypes } from '../services/jobService.js';
 import { getStudentProfile } from '../services/profileService.js';
 
 function applicationError(message, statusCode, code) {
@@ -22,11 +22,12 @@ export async function applyToJob(req, res, next) {
     const job = await findJob(jobId);
     if (!job) throw applicationError('That job was not found.', 404, 'JOB_NOT_FOUND');
     if (job.status !== 'active') throw applicationError('Applications for this job are closed.', 410, 'JOB_EXPIRED');
+    if (job.sourceType === jobSourceTypes.OFF_CAMPUS && !isValidApplicationUrl(job.applicationUrl)) throw applicationError('Company application link unavailable for this listing.', 422, 'COMPANY_APPLICATION_LINK_UNAVAILABLE');
     const profile = await getStudentProfile(req.user);
     const eligibility = evaluateEligibility(profile, job);
     if (!eligibility.eligible) throw applicationError(`You are not eligible for this job. ${eligibility.reasons.join(' ')}`, 403, 'NOT_ELIGIBLE');
-    const application = await createApplication(req.user.id, jobId);
-    return res.status(201).json({ success: true, data: application });
+    const result = await createApplication(req.user.id, jobId);
+    return res.status(result.alreadyApplied ? 200 : 201).json({ success: true, data: result });
   } catch (error) { return next(error); }
 }
 

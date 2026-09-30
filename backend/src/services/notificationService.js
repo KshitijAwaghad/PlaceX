@@ -1,6 +1,6 @@
 import { getNotificationsCollection } from './database.js';
 import { evaluateEligibility } from './eligibilityService.js';
-import { listJobs } from './jobService.js';
+import { listOnCampusJobs } from './jobService.js';
 import { getStudentProfile, profileCompletion } from './profileService.js';
 
 function publicNotification(record) {
@@ -37,7 +37,7 @@ export async function refreshNotifications(user) {
     await notifications.updateOne({ _id: profileNotificationId, userId: user.id }, { $set: { read: true, updatedAt: new Date().toISOString() } });
   }
 
-  const jobs = await listJobs();
+  const jobs = await listOnCampusJobs();
   const now = Date.now();
   for (const job of jobs) {
     const days = Math.ceil((new Date(job.deadline).getTime() - now) / (24 * 60 * 60 * 1000));

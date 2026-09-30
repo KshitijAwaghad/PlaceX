@@ -53,5 +53,5 @@ export default function App() {
 
   if (isCheckingSession) return <main className="login-shell" aria-busy="true" />
   if (!isAuthenticated) return <Login onLogin={completeLogin} onRegister={completeRegistration} onGoogleLogin={completeGoogleLogin} />
-  return <Dashboard isAuthenticated studentEmail={user?.email} onLogout={completeLogout} />
+  return <Dashboard isAuthenticated studentEmail={user?.email} userRole={user?.role} onLogout={completeLogout} />
 }

@@ -1,132 +1,162 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, Bell, Briefcase, CalendarDays, Check, ClipboardList, Clock3, FileText, LoaderCircle, MapPin, Sparkles, UploadCloud, User, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, Bell, Briefcase, Check, ClipboardList, Clock3, ExternalLink, LoaderCircle, MapPin, User, X } from 'lucide-react'
+import applicationStatuses from '../../../shared/applicationStatuses.json'
 import '../placement.css'
-import { applyToPlacementJob, getApplications, getNotifications, getPlacementJobs, getStudentProfile, markAllNotificationsRead, markNotificationRead, updatePlacementApplication, updateStudentProfile, uploadResume } from '../services/api'
+import { applyToPlacementJob, getApplications, getNotifications, getOffCampusJobs, getOnCampusJobs, getStudentProfile, markAllNotificationsRead, markNotificationRead, removeProfilePhoto, updateStudentProfile, uploadProfilePhoto, uploadResume } from '../services/api'
 import type { ApplicationStatus, InAppNotification, PlacementApplication, PlacementJob, ProfileCompletion, StudentProfile } from '../types/placement'
+import ProfileEditor from './ProfileEditor'
 
 export type PlacementSection = 'overview' | 'profile' | 'jobs' | 'applications' | 'notifications'
 type PlacementDestination = 'analyze' | 'simulator' | 'plan' | 'history'
-type PlacementManagementProps = { section?: PlacementSection; onSectionChange?: (section: PlacementSection) => void; onNavigate?: (destination: PlacementDestination) => void }
+type Channel = 'ON_CAMPUS' | 'OFF_CAMPUS'
+type Props = { section?: PlacementSection; onSectionChange?: (section: PlacementSection) => void; onNavigate?: (destination: PlacementDestination) => void }
+const profilePhotoTypes = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const maxProfilePhotoSize = 3 * 1024 * 1024
 
-const statuses: ApplicationStatus[] = ['Applied', 'Assessment', 'Interview', 'Offer', 'Rejected']
+function formatDate(value: string | null | undefined) { const date = value ? new Date(value) : null; return !date || Number.isNaN(date.getTime()) ? 'Deadline not provided' : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }
+function deadlineLabel(value: string | null) { if (!value) return 'Deadline not provided'; const days = Math.ceil((new Date(value).getTime() - Date.now()) / 86400000); return !Number.isFinite(days) ? 'Deadline not provided' : days < 0 ? 'Closed' : days === 0 ? 'Closes today' : String(days) + ' days left' }
+function safeUrl(value: string | null | undefined) { try { const parsed = new URL(value || ''); return ['http:', 'https:'].includes(parsed.protocol) && parsed.hostname ? parsed.toString() : null } catch { return null } }
 
-function splitList(value: string) { return [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))] }
-function formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? 'Not set' : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }
-function daysUntil(value: string) { return Math.ceil((new Date(value).getTime() - Date.now()) / (24 * 60 * 60 * 1000)) }
-function studentName(profile: StudentProfile) { return profile.fullName.trim().split(/\s+/)[0] || profile.email.split('@')[0] || 'there' }
-function profileValue(value: string | number | null, fallback = 'Not added') { return value === null || value === '' ? fallback : String(value) }
-
-function JobCard({ job, applied, applying, onApply }: { job: PlacementJob; applied: boolean; applying: boolean; onApply: (jobId: string) => void }) {
-  const deadlineDays = daysUntil(job.deadline)
+function JobCard({ job, applied, applying, onApply, onProfile, onApplications }: { job: PlacementJob; applied: boolean; applying: boolean; onApply: (job: PlacementJob) => void; onProfile: () => void; onApplications: () => void }) {
+  const campus = job.sourceType === 'ON_CAMPUS'
+  const url = safeUrl(job.applicationUrl)
+  const canApply = job.eligibility.eligible && job.status === 'active' && (campus || Boolean(url))
+  const skills = job.eligibility.checks.skills
+  const matched = new Set(skills.matched)
   return <article className="placement-card job-card">
-    <div className="job-card-top"><div><p className="eyebrow">{job.companyName}</p><h3>{job.role}</h3></div><span className={`status-badge ${job.status}`}>{job.status === 'active' ? 'Active' : 'Expired'}</span></div>
-    <div className="job-facts"><span><Briefcase size={14} />{job.ctc}</span><span><MapPin size={14} />{job.location}</span><span><Clock3 size={14} />{deadlineDays < 0 ? 'Closed' : deadlineDays === 0 ? 'Closes today' : `${deadlineDays} days left`}</span></div>
-    <p className="job-description">{job.jobDescription}</p>
-    <div className="skill-list">{job.requiredSkills.map((skill) => <span className="skill-pill good" key={skill}><Check size={12} />{skill}</span>)}</div>
-    <div className={`eligibility-box ${job.eligibility.eligible ? 'eligible' : 'ineligible'}`}><strong>{job.eligibility.eligible ? 'Eligible to apply' : 'Not eligible yet'}</strong>{job.eligibility.eligible ? <span>CGPA, backlog, branch, graduation year, and skills match this role.</span> : <ul>{job.eligibility.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</div>
-    <button className="primary-button" disabled={!job.eligibility.eligible || job.status !== 'active' || applied || applying} onClick={() => onApply(job.id)}>{applying ? <LoaderCircle className="spin" size={16} /> : applied ? <Check size={16} /> : <Briefcase size={16} />}{applied ? 'Already applied' : job.eligibility.eligible ? 'Apply now' : 'Complete profile to apply'}</button>
+    <div className="job-card-top"><div><p className="eyebrow">{job.companyName || 'Company not provided'}</p><h3>{job.role || 'Role not provided'}</h3></div><span className={'status-badge ' + job.status}>{job.status === 'active' ? 'Active' : 'Closed'}</span></div>
+    <div className="job-facts"><span><Briefcase size={14} />{job.ctc || 'Salary not provided'}</span><span><MapPin size={14} />{job.location || 'Location not provided'}</span><span><Clock3 size={14} />{deadlineLabel(job.deadline)}</span></div>
+    {job.jobDescription && <p className="job-description">{job.jobDescription}</p>}
+    {campus ? null : <p className="job-source-note">{job.requirementsSource === 'INFERRED_FROM_DESCRIPTION' ? 'Skills are inferred from the listing description.' : 'External job listing requirements.'}</p>}
+    <section className="job-skill-section"><span className="job-skill-heading">Required skills</span><div className="skill-list">{skills.required.length ? skills.required.map((skill) => <span className="skill-pill required" key={skill}>{skill}</span>) : <span className="muted">Requirements not provided.</span>}</div></section>
+    {skills.required.length > 0 && <section className="job-skill-section"><span className="job-skill-heading">Your skill match</span><div className="skill-list">{skills.required.map((skill) => matched.has(skill) ? <span className="skill-pill matched" key={skill}><Check size={12} />{skill}</span> : <span className="skill-pill missing" key={skill}><X size={12} />{skill}</span>)}</div></section>}
+    <div className={'eligibility-box ' + (job.eligibility.eligible ? 'eligible' : 'ineligible')}><strong>{job.eligibility.eligible ? campus ? 'Eligible for this campus drive' : 'Suitable based on available requirements' : 'Not eligible yet'}</strong>{job.eligibility.eligible ? <span>{campus ? 'You meet the official TPO criteria for this drive.' : 'This assessment only uses requirements available from the external listing.'}</span> : <>{skills.studentSkillCount === 0 && <button className="text-button eligibility-profile-link" type="button" onClick={onProfile}>Complete Profile <ArrowRight size={14} /></button>}<ul>{job.eligibility.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></>}</div>
+    {applied && <p className="application-tracked"><Check size={14} />Application tracked</p>}
+    {!campus && job.eligibility.eligible && job.status === 'active' && !url && <p className="application-link-unavailable">Company application link unavailable</p>}
+    {applied && campus
+      ? <button className="secondary-button job-action" type="button" onClick={onApplications}><ClipboardList size={16} />View application</button>
+      : <button className="primary-button" disabled={!canApply || applying} onClick={() => onApply(job)}>{applying ? <LoaderCircle className="spin" size={16} /> : applied ? <ExternalLink size={16} /> : <Briefcase size={16} />}{applying ? campus ? 'Tracking application...' : 'Opening company job...' : applied ? 'Open Company Job' : !campus && !url ? 'Company application link unavailable' : campus ? 'Apply for Campus Drive' : 'Apply on Company Site'}</button>}
   </article>
 }
 
-export default function PlacementManagement({ section, onSectionChange, onNavigate }: PlacementManagementProps) {
+export default function PlacementManagement({ section, onSectionChange, onNavigate }: Props) {
   const [localSection, setLocalSection] = useState<PlacementSection>('overview')
   const [profile, setProfile] = useState<StudentProfile | null>(null)
   const [completion, setCompletion] = useState<ProfileCompletion | null>(null)
   const [jobs, setJobs] = useState<PlacementJob[]>([])
+  const [onCampusCount, setOnCampusCount] = useState(0)
   const [applications, setApplications] = useState<PlacementApplication[]>([])
   const [notifications, setNotifications] = useState<InAppNotification[]>([])
+  const [channel, setChannel] = useState<Channel>('ON_CAMPUS')
+  const [applicationFilter, setApplicationFilter] = useState<'ALL' | Channel>('ALL')
+  const [jobsMessage, setJobsMessage] = useState('')
   const [loading, setLoading] = useState(true)
+  const [jobsLoading, setJobsLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [applyingJobId, setApplyingJobId] = useState('')
   const [uploadingResume, setUploadingResume] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [applyingJobId, setApplyingJobId] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
-  const [branchFilter, setBranchFilter] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
-  const [minimumCtc, setMinimumCtc] = useState('')
   const [eligibleOnly, setEligibleOnly] = useState(false)
-  const [deadlineFilter, setDeadlineFilter] = useState<'all' | 'closingSoon' | 'active'>('all')
-  const resumeInputRef = useRef<HTMLInputElement>(null)
   const activeSection = section || localSection
+  const selectSection = (next: PlacementSection) => { if (onSectionChange) onSectionChange(next); else setLocalSection(next) }
 
-  const selectSection = (nextSection: PlacementSection) => { if (onSectionChange) onSectionChange(nextSection); else setLocalSection(nextSection) }
-  const loadPlacementData = async () => {
-    setLoading(true); setError('')
+  useEffect(() => { void (async () => {
+    setLoading(true)
     try {
-      const [profileResult, jobItems, applicationItems, notificationResult] = await Promise.all([getStudentProfile(), getPlacementJobs(), getApplications(), getNotifications()])
-      setProfile(profileResult.profile); setCompletion(profileResult.completion); setJobs(jobItems); setApplications(applicationItems); setNotifications(notificationResult.items)
+      const results = await Promise.all([getStudentProfile(), getApplications(), getNotifications()])
+      setProfile(results[0].profile); setCompletion(results[0].completion); setApplications(results[1]); setNotifications(results[2].items)
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load placement data.') } finally { setLoading(false) }
-  }
-  useEffect(() => { void loadPlacementData() }, [])
+  })() }, [])
 
-  const appliedJobIds = useMemo(() => new Set(applications.map((application) => application.jobId)), [applications])
-  const locations = useMemo(() => [...new Set(jobs.map((job) => job.location))], [jobs])
-  const branches = useMemo(() => [...new Set(jobs.flatMap((job) => job.eligibleBranches))], [jobs])
-  const roles = useMemo(() => [...new Set(jobs.map((job) => job.role))], [jobs])
+  useEffect(() => {
+    if (!profile) return
+    let cancelled = false
+    void (async () => {
+      setJobsLoading(true); setJobsMessage('')
+      try {
+        if (channel === 'ON_CAMPUS') {
+          const items = await getOnCampusJobs()
+          if (!cancelled) { setJobs(items); setOnCampusCount(items.filter((job) => job.status === 'active').length) }
+        } else {
+          const result = await getOffCampusJobs()
+          if (!cancelled) { setJobs(result.items); setJobsMessage(result.message || (result.availability === 'not_configured' ? 'Off-campus jobs are not configured yet.' : '')) }
+        }
+      } catch (err) { if (!cancelled) { setJobs([]); setJobsMessage(err instanceof Error ? err.message : 'Off-campus jobs are temporarily unavailable.') } } finally { if (!cancelled) setJobsLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [channel, profile?.email])
+
+  const locations = useMemo(() => [...new Set(jobs.map((job) => job.location).filter((value): value is string => Boolean(value)))], [jobs])
+  const roles = useMemo(() => [...new Set(jobs.map((job) => job.role).filter((value): value is string => Boolean(value)))], [jobs])
   const visibleJobs = useMemo(() => jobs.filter((job) => {
     const term = search.trim().toLowerCase()
-    const matchesSearch = !term || `${job.companyName} ${job.role}`.toLowerCase().includes(term)
-    const matchesLocation = !locationFilter || job.location === locationFilter
-    const matchesBranch = !branchFilter || job.eligibleBranches.includes(branchFilter)
-    const matchesRole = !roleFilter || job.role === roleFilter
-    const matchesCtc = !minimumCtc || job.ctcLpa >= Number(minimumCtc)
-    const days = daysUntil(job.deadline)
-    const matchesDeadline = deadlineFilter === 'all' || (deadlineFilter === 'closingSoon' && job.status === 'active' && days >= 0 && days <= 7) || (deadlineFilter === 'active' && job.status === 'active')
-    return matchesSearch && matchesLocation && matchesBranch && matchesRole && matchesCtc && matchesDeadline && (!eligibleOnly || job.eligibility.eligible)
-  }), [jobs, search, locationFilter, branchFilter, roleFilter, minimumCtc, deadlineFilter, eligibleOnly])
+    return (!term || ((job.companyName || '') + ' ' + (job.role || '')).toLowerCase().includes(term)) && (!locationFilter || job.location === locationFilter) && (!roleFilter || job.role === roleFilter) && (!eligibleOnly || job.eligibility.eligible)
+  }), [jobs, search, locationFilter, roleFilter, eligibleOnly])
+  const appliedIds = useMemo(() => new Set(applications.map((application) => application.jobId)), [applications])
+  const filteredApplications = applicationFilter === 'ALL' ? applications : applications.filter((application) => application.hiringType === applicationFilter)
+  const statuses = [...new Set([...applicationStatuses, ...filteredApplications.map((application) => application.status)])] as ApplicationStatus[]
 
   const saveProfile = async () => {
     if (!profile) return
-    setSaving(true); setError(''); setNotice('')
+    setSaving(true); setError('')
     try {
-      const result = await updateStudentProfile({ fullName: profile.fullName, phone: profile.phone, branch: profile.branch, college: profile.college, cgpa: profile.cgpa, backlogs: profile.backlogs, graduationYear: profile.graduationYear, skills: profile.skills, projects: profile.projects, preferredRoles: profile.preferredRoles, preferredLocations: profile.preferredLocations })
-      const [updatedJobs, notificationResult] = await Promise.all([getPlacementJobs(), getNotifications()])
-      setProfile(result.profile); setCompletion(result.completion); setJobs(updatedJobs); setNotifications(notificationResult.items); setNotice('Profile saved. Eligibility checks have been updated.')
+      const result = await updateStudentProfile({ fullName: profile.fullName, phone: profile.phone, branch: profile.branch, college: profile.college, cgpa: profile.cgpa, backlogs: profile.backlogs, graduationYear: profile.graduationYear, skills: profile.skills, projects: profile.projects, preferredRoles: profile.preferredRoles, preferredLocations: profile.preferredLocations, socialLinks: profile.socialLinks })
+      setProfile(result.profile); setCompletion(result.completion); setNotice('Profile saved. Eligibility checks have been updated.')
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save your profile.') } finally { setSaving(false) }
   }
   const uploadProfileResume = async (file?: File) => {
     if (!file) return
-    setUploadingResume(true); setError(''); setNotice('')
+    setUploadingResume(true); setError('')
     try { await uploadResume(file); const result = await getStudentProfile(); setProfile(result.profile); setCompletion(result.completion); setNotice('Resume uploaded and attached to your placement profile.') } catch (err) { setError(err instanceof Error ? err.message : 'Unable to upload your resume.') } finally { setUploadingResume(false) }
   }
-  const apply = async (jobId: string) => {
-    setApplyingJobId(jobId); setError(''); setNotice('')
-    try { const application = await applyToPlacementJob(jobId); setApplications((current) => [application, ...current]); setNotice('Application created and added to your tracker.') } catch (err) { setError(err instanceof Error ? err.message : 'Unable to apply for this job.') } finally { setApplyingJobId('') }
+  const uploadStudentPhoto = async (file?: File) => {
+    if (!file) return
+    if (!profilePhotoTypes.has(file.type)) { setError('Profile photos must be JPG, PNG, or WEBP files.'); return }
+    if (!file.size) { setError('Choose a non-empty profile photo.'); return }
+    if (file.size > maxProfilePhotoSize) { setError('Profile photos must be 3MB or smaller.'); return }
+    setUploadingPhoto(true); setError('')
+    try {
+      const result = await uploadProfilePhoto(file)
+      setProfile(result.profile); setCompletion(result.completion); setNotice('Profile photo updated.')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to upload your profile photo.') } finally { setUploadingPhoto(false) }
   }
-  const changeStatus = async (applicationId: string, status: ApplicationStatus) => { setError(''); try { const updated = await updatePlacementApplication(applicationId, { status }); setApplications((current) => current.map((application) => application.id === updated.id ? updated : application)) } catch (err) { setError(err instanceof Error ? err.message : 'Unable to update application status.') } }
-  const markRead = async (notificationId: string) => { try { const updated = await markNotificationRead(notificationId); setNotifications((current) => current.map((item) => item.id === updated.id ? updated : item)) } catch (err) { setError(err instanceof Error ? err.message : 'Unable to mark notification as read.') } }
-  const markAllRead = async () => { try { await markAllNotificationsRead(); setNotifications((current) => current.map((item) => ({ ...item, read: true }))) } catch (err) { setError(err instanceof Error ? err.message : 'Unable to update notifications.') } }
+  const removeStudentPhoto = async () => {
+    setUploadingPhoto(true); setError('')
+    try {
+      const result = await removeProfilePhoto()
+      setProfile(result.profile); setCompletion(result.completion); setNotice('Profile photo removed.')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to remove your profile photo.') } finally { setUploadingPhoto(false) }
+  }
+  const apply = async (job: PlacementJob) => {
+    const url = safeUrl(job.applicationUrl)
+    if (job.sourceType === 'OFF_CAMPUS' && !url) { setError('Company application link unavailable for this listing.'); return }
+    setApplyingJobId(job.id); setError('')
+    try {
+      const result = await applyToPlacementJob(job.id)
+      setApplications((current) => result.alreadyApplied || current.some((application) => application.id === result.application.id) ? current : [result.application, ...current])
+      if (job.sourceType === 'OFF_CAMPUS' && url) window.open(url, '_blank', 'noopener,noreferrer')
+      setNotice(job.sourceType === 'ON_CAMPUS' ? 'Campus-drive application submitted and added to your tracker.' : 'Application tracked. Complete your application on the company website.')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to track this application.') } finally { setApplyingJobId('') }
+  }
+  const markRead = async (id: string) => { try { const updated = await markNotificationRead(id); setNotifications((items) => items.map((item) => item.id === updated.id ? updated : item)) } catch (err) { setError(err instanceof Error ? err.message : 'Unable to mark notification as read.') } }
+  const markAll = async () => { try { await markAllNotificationsRead(); setNotifications((items) => items.map((item) => ({ ...item, read: true }))) } catch (err) { setError(err instanceof Error ? err.message : 'Unable to update notifications.') } }
 
   if (loading || !profile || !completion) return <section className="single-panel placement-loading"><LoaderCircle className="spin" size={28} /><p>Loading your placement hub...</p></section>
-
-  const eligibleJobs = jobs.filter((job) => job.eligibility.eligible && job.status === 'active')
-  const unreadCount = notifications.filter((notification) => !notification.read).length
-  const closingSoon = jobs.filter((job) => job.status === 'active' && daysUntil(job.deadline) >= 0 && daysUntil(job.deadline) <= 7).slice(0, 4)
-  const recommendedJobs = (eligibleJobs.length ? eligibleJobs : jobs.filter((job) => job.status === 'active')).slice(0, 3)
-  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'
-  const applicationsFor = (status: ApplicationStatus) => applications.filter((application) => application.status === status)
-  const updateProject = (index: number, field: 'title' | 'description' | 'url', value: string) => setProfile({ ...profile, projects: profile.projects.map((project, projectIndex) => projectIndex === index ? { ...project, [field]: value } : project) })
+  const campusCount = onCampusCount
+  const unreadCount = notifications.filter((item) => !item.read).length
 
   return <section className="placement-workspace">
     {error && <div className="error-banner">{error}<button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
     {notice && <div className="placement-notice"><Check size={16} />{notice}<button onClick={() => setNotice('')} aria-label="Dismiss confirmation"><X size={16} /></button></div>}
-
-    {activeSection === 'overview' && <>
-      <section className="placement-home-hero"><div><p className="eyebrow">PLACEMENT HUB</p><h1>{greeting}, <em>{studentName(profile)}</em></h1><p>Your placement profile is {completion.percentage}% complete. Keep it current to unlock more relevant opportunities.</p></div><div className="hub-completion"><span>PROFILE COMPLETION</span><strong>{completion.percentage}%</strong><div className="completion-track"><i style={{ width: `${completion.percentage}%` }} /></div><button className="primary-button" onClick={() => selectSection('profile')}><User size={16} />{completion.missingMandatory.length ? 'Complete profile' : 'Edit profile'}</button></div></section>
-      <div className="placement-metric-grid"><section className="placement-card profile-snapshot"><div className="snapshot-heading"><div><p className="eyebrow">STUDENT PROFILE</p><h3>{profile.fullName || 'Your profile is ready for details'}</h3><p>{profileValue(profile.branch)}{profile.college ? ` - ${profile.college}` : ''}</p></div><button className="text-button" onClick={() => selectSection('profile')}>Edit profile <ArrowRight size={14} /></button></div><div className="snapshot-facts"><span><small>CGPA</small><b>{profileValue(profile.cgpa)}</b></span><span><small>Backlogs</small><b>{profileValue(profile.backlogs)}</b></span><span><small>Grad year</small><b>{profileValue(profile.graduationYear)}</b></span><span><small>Skills</small><b>{profile.skills.length || 'Not added'}</b></span><span><small>Projects</small><b>{profile.projects.length || 'Not added'}</b></span><span><small>Resume</small><b>{profile.resume ? 'Uploaded' : 'Not uploaded'}</b></span></div>{completion.missingMandatory.length > 0 && <p className="placement-warning">Still needed: {completion.missingMandatory.join(', ')}.</p>}</section><section className="placement-card stat-card"><Briefcase size={21} /><strong>{eligibleJobs.length}</strong><span>Eligible jobs</span><button className="text-button" onClick={() => selectSection('jobs')}>Browse jobs</button></section><section className="placement-card stat-card"><ClipboardList size={21} /><strong>{applications.length}</strong><span>Applications</span><button className="text-button" onClick={() => selectSection('applications')}>Open tracker</button></section><section className="placement-card stat-card"><CalendarDays size={21} /><strong>{applicationsFor('Interview').length}</strong><span>Interviews</span><button className="text-button" onClick={() => selectSection('applications')}>View pipeline</button></section><section className="placement-card stat-card"><Check size={21} /><strong>{applicationsFor('Offer').length}</strong><span>Offers</span><button className="text-button" onClick={() => selectSection('applications')}>View offers</button></section></div>
-      <section className="placement-section"><div className="placement-section-heading"><div><p className="eyebrow">PLACEMENT OPPORTUNITIES</p><h2>Recommended for your profile</h2><p>Eligibility is calculated from your profile, not guessed by AI.</p></div><button className="text-button" onClick={() => selectSection('jobs')}>Browse all jobs <ArrowRight size={14} /></button></div><div className="recommended-grid">{recommendedJobs.length ? recommendedJobs.map((job) => <article className="placement-card recommended-job" key={job.id}><div><p className="eyebrow">{job.companyName}</p><h3>{job.role}</h3></div><div className="job-facts"><span><Briefcase size={14} />{job.ctc}</span><span><MapPin size={14} />{job.location}</span><span><Clock3 size={14} />{formatDate(job.deadline)}</span></div><span className={`eligibility-label ${job.eligibility.eligible ? 'eligible' : 'ineligible'}`}>{job.eligibility.eligible ? 'Eligible' : 'Profile gap'}</span><button className="text-button" onClick={() => selectSection('jobs')}>View job <ArrowRight size={14} /></button></article>) : <div className="placement-card empty-placement"><Briefcase size={26} /><h3>No active opportunities yet.</h3><p>Jobs will appear here as they are published.</p></div>}</div></section>
-      <div className="placement-two-column hub-detail-grid"><section className="placement-card"><div className="placement-section-heading compact"><div><p className="eyebrow">APPLICATION TRACKER</p><h3>Your placement pipeline</h3></div><button className="text-button" onClick={() => selectSection('applications')}>View applications <ArrowRight size={14} /></button></div><div className="application-summary">{statuses.map((status) => <span key={status}><b>{applicationsFor(status).length}</b><small>{status}</small></span>)}</div></section><section className="placement-card"><div className="placement-section-heading compact"><div><p className="eyebrow">UPCOMING DEADLINES</p><h3>Plan your next move</h3></div><button className="text-button" onClick={() => selectSection('notifications')}>{unreadCount ? `${unreadCount} unread` : 'Notifications'} <ArrowRight size={14} /></button></div>{closingSoon.length ? closingSoon.map((job) => <div className="compact-row" key={job.id}><div><strong>{job.companyName} - {job.role}</strong><span>Deadline: {formatDate(job.deadline)} - {job.location}</span></div><b className={job.eligibility.eligible ? 'positive' : 'negative'}>{job.eligibility.eligible ? 'Eligible' : 'Profile gap'}</b></div>) : <p className="muted">No active application deadlines in the next seven days.</p>}</section></div>
-      <section className="placement-section"><div className="placement-section-heading"><div><p className="eyebrow">QUICK ACTIONS</p><h2>Keep your placement journey moving</h2></div></div><div className="quick-action-grid"><button onClick={() => onNavigate?.('analyze')}><Sparkles size={20} /><strong>Analyze job fit</strong><span>Compare your resume with a job description.</span></button><button onClick={() => selectSection('profile')}><User size={20} /><strong>Complete profile</strong><span>Improve the data behind your eligibility checks.</span></button><button onClick={() => selectSection('jobs')}><Briefcase size={20} /><strong>Browse jobs</strong><span>Find opportunities that match your profile.</span></button><button onClick={() => selectSection('applications')}><ClipboardList size={20} /><strong>Track applications</strong><span>Manage your application pipeline.</span></button><button onClick={() => onNavigate?.('plan')}><CalendarDays size={20} /><strong>30-day plan</strong><span>Continue your personalized preparation plan.</span></button></div></section>
-    </>}
-
-    {activeSection === 'profile' && <section className="placement-card profile-editor"><div className="result-header"><div><p className="eyebrow">STUDENT PROFILE</p><h2>Placement profile</h2><p className="muted">This information powers job eligibility, recommendations, and reminders.</p></div><div className="completion-number">{completion.percentage}%</div></div><div className="completion-track"><i style={{ width: `${completion.percentage}%` }} /></div>{completion.missingMandatory.length > 0 && <p className="placement-warning">Missing: {completion.missingMandatory.join(', ')}.</p>}<div className="profile-form-section"><p className="eyebrow">PERSONAL INFORMATION</p><div className="profile-form-grid"><label>Full name<input value={profile.fullName} onChange={(event) => setProfile({ ...profile, fullName: event.target.value })} /></label><label>Email<input value={profile.email} readOnly /></label><label className="profile-full">Phone number<input value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })} placeholder="+91 9876543210" /></label></div></div><div className="profile-form-section"><p className="eyebrow">ACADEMIC INFORMATION</p><div className="profile-form-grid"><label>Branch / department<input value={profile.branch} onChange={(event) => setProfile({ ...profile, branch: event.target.value })} /></label><label>College<input value={profile.college} onChange={(event) => setProfile({ ...profile, college: event.target.value })} /></label><label>CGPA<input type="number" min="0" max="10" step="0.01" value={profile.cgpa ?? ''} onChange={(event) => setProfile({ ...profile, cgpa: event.target.value === '' ? null : Number(event.target.value) })} /></label><label>Backlogs<input type="number" min="0" max="50" value={profile.backlogs ?? ''} onChange={(event) => setProfile({ ...profile, backlogs: event.target.value === '' ? null : Number(event.target.value) })} /></label><label className="profile-full">Graduation year<input type="number" min="2020" max="2045" value={profile.graduationYear ?? ''} onChange={(event) => setProfile({ ...profile, graduationYear: event.target.value === '' ? null : Number(event.target.value) })} /></label></div></div><div className="profile-form-section"><p className="eyebrow">SKILLS</p><div className="profile-form-grid"><label className="profile-full">Technical skills, programming languages, and tools <small>Separate with commas</small><input value={profile.skills.join(', ')} onChange={(event) => setProfile({ ...profile, skills: splitList(event.target.value) })} placeholder="React, Java, SQL" /></label></div></div><div className="profile-form-section"><div className="profile-section-title"><p className="eyebrow">PROJECTS</p>{profile.projects.length < 10 && <button className="text-button" type="button" onClick={() => setProfile({ ...profile, projects: [...profile.projects, { title: '', description: '', url: '' }] })}>Add project</button>}</div>{profile.projects.length ? <div className="project-editor-list">{profile.projects.map((project, index) => <div className="project-editor" key={`${project.title}-${index}`}><label>Project name<input value={project.title} onChange={(event) => updateProject(index, 'title', event.target.value)} /></label><label>Link (optional)<input value={project.url} onChange={(event) => updateProject(index, 'url', event.target.value)} placeholder="https://..." /></label><label className="profile-full">Description<textarea value={project.description} onChange={(event) => updateProject(index, 'description', event.target.value)} placeholder="What did you build and what technologies did you use?" /></label><button className="text-button remove-project" type="button" onClick={() => setProfile({ ...profile, projects: profile.projects.filter((_, projectIndex) => projectIndex !== index) })}>Remove project</button></div>)}</div> : <p className="muted">Add a project to show practical experience in your placement profile.</p>}</div><div className="profile-form-section"><p className="eyebrow">CAREER PREFERENCES</p><div className="profile-form-grid"><label className="profile-full">Preferred job roles <small>Separate with commas</small><input value={profile.preferredRoles.join(', ')} onChange={(event) => setProfile({ ...profile, preferredRoles: splitList(event.target.value) })} placeholder="Software Engineer, Data Analyst" /></label><label className="profile-full">Preferred locations <small>Separate with commas</small><input value={profile.preferredLocations.join(', ')} onChange={(event) => setProfile({ ...profile, preferredLocations: splitList(event.target.value) })} placeholder="Pune, Bengaluru" /></label></div></div><div className="profile-form-section resume-section"><p className="eyebrow">RESUME</p><div className="resume-profile-row"><FileText size={18} /><span>{profile.resume?.originalName ? `Current resume: ${profile.resume.originalName}` : 'No resume attached to your placement profile.'}</span></div><input ref={resumeInputRef} hidden type="file" accept=".pdf,.docx,.jpg,.jpeg,.png,.webp" onChange={(event) => { void uploadProfileResume(event.target.files?.[0]); event.currentTarget.value = '' }} /><div className="profile-actions"><button className="secondary-button" type="button" disabled={uploadingResume} onClick={() => resumeInputRef.current?.click()}>{uploadingResume ? <LoaderCircle className="spin" size={16} /> : <UploadCloud size={16} />}{profile.resume ? 'Replace resume' : 'Upload resume'}</button><button className="text-button" type="button" onClick={() => onNavigate?.('analyze')}>Analyze this resume <ArrowRight size={14} /></button></div></div><button className="primary-button" disabled={saving} onClick={() => void saveProfile()}>{saving ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}{saving ? 'Saving profile...' : 'Save profile'}</button></section>}
-
-    {activeSection === 'jobs' && <><section className="placement-card job-filter-panel"><div><p className="eyebrow">JOB BOARD</p><h2>Find a role you can apply to.</h2><p className="muted">Every opportunity is compared with your actual profile.</p></div><div className="job-filters"><input aria-label="Search by company or role" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company or role" /><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">All roles</option>{roles.map((role) => <option key={role}>{role}</option>)}</select><select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option value="">All locations</option>{locations.map((location) => <option key={location}>{location}</option>)}</select><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="">All branches</option>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select><select value={deadlineFilter} onChange={(event) => setDeadlineFilter(event.target.value as typeof deadlineFilter)}><option value="all">All deadlines</option><option value="closingSoon">Closing in 7 days</option><option value="active">Active only</option></select><input aria-label="Minimum CTC in LPA" type="number" min="0" value={minimumCtc} onChange={(event) => setMinimumCtc(event.target.value)} placeholder="Min CTC LPA" /><label className="filter-checkbox"><input type="checkbox" checked={eligibleOnly} onChange={(event) => setEligibleOnly(event.target.checked)} />Eligible only</label></div></section><div className="job-grid">{visibleJobs.length ? visibleJobs.map((job) => <JobCard key={job.id} job={job} applied={appliedJobIds.has(job.id)} applying={applyingJobId === job.id} onApply={apply} />) : <section className="placement-card empty-placement"><Briefcase size={26} /><h3>No matching jobs.</h3><p>Adjust the filters or complete your profile to see eligible opportunities.</p></section>}</div></>}
-
-    {activeSection === 'applications' && <section className="placement-card tracker-panel"><div className="result-header"><div><p className="eyebrow">APPLICATION TRACKER</p><h2>Every opportunity, in one place.</h2><p className="muted">Update a status as your application progresses.</p></div><span className="plan-badge">{applications.length} total</span></div><div className="application-summary tracker-summary">{statuses.map((status) => <span key={status}><b>{applicationsFor(status).length}</b><small>{status}</small></span>)}</div><div className="tracker-grid">{statuses.map((status) => <div className="tracker-column" key={status}><h4>{status}<span>{applicationsFor(status).length}</span></h4>{applicationsFor(status).map((application) => <article className="application-card" key={application.id}><strong>{application.job?.companyName || 'Removed job'}</strong><span>{application.job?.role || 'Job details unavailable'}</span><small>Applied {formatDate(application.appliedAt)}</small>{application.job && <small>Deadline {formatDate(application.job.deadline)}</small>}<select value={application.status} onChange={(event) => void changeStatus(application.id, event.target.value as ApplicationStatus)}>{statuses.map((option) => <option key={option}>{option}</option>)}</select></article>)}{!applicationsFor(status).length && <p className="muted">No applications</p>}</div>)}</div></section>}
-
-    {activeSection === 'notifications' && <section className="placement-card notification-panel"><div className="result-header"><div><p className="eyebrow">IN-APP NOTIFICATIONS</p><h2>Deadlines and profile reminders</h2></div>{unreadCount > 0 && <button className="text-button" onClick={() => void markAllRead()}>Mark all as read</button>}</div>{notifications.length ? <div className="notification-list">{notifications.map((notification) => <article className={`notification-item ${notification.read ? 'read' : ''}`} key={notification.id}><Bell size={17} /><div><strong>{notification.title}</strong><p>{notification.message}</p><small>{formatDate(notification.createdAt)}</small></div>{!notification.read && <button className="text-button" onClick={() => void markRead(notification.id)}>Mark read</button>}</article>)}</div> : <div className="empty-placement"><Bell size={26} /><h3>You're all caught up.</h3><p>Placement reminders will appear here.</p></div>}</section>}
+    {activeSection === 'overview' && <><section className="placement-home-hero"><div><p className="eyebrow">PLACEMENT HUB</p><h1>Welcome, <em>{profile.fullName.split(' ')[0] || 'there'}</em></h1><p>Your profile is {completion.percentage}% complete. Keep it current for accurate matching.</p></div><div className="hub-completion"><span>PROFILE COMPLETION</span><strong>{completion.percentage}%</strong><div className="completion-track"><i style={{ width: String(completion.percentage) + '%' }} /></div><button className="primary-button" onClick={() => selectSection('profile')}><User size={16} />Edit profile</button></div></section><div className="placement-metric-grid"><section className="placement-card profile-snapshot"><p className="eyebrow">STUDENT PROFILE</p><h3>{profile.fullName || 'Your profile is ready for details'}</h3><p>{profile.branch || 'Branch not added'}</p></section><section className="placement-card stat-card"><Briefcase size={21} /><strong>{campusCount}</strong><span>On-campus drives</span><button className="text-button" onClick={() => { setChannel('ON_CAMPUS'); selectSection('jobs') }}>View drives</button></section><section className="placement-card stat-card"><ClipboardList size={21} /><strong>{applications.length}</strong><span>Applications</span><button className="text-button" onClick={() => selectSection('applications')}>Open tracker</button></section></div><div className="placement-two-column hub-detail-grid"><section className="placement-card channel-summary"><p className="eyebrow">ON-CAMPUS HIRING</p><h3>TPO-published campus drives</h3><p>Eligibility uses official criteria entered by your placement team.</p><button className="primary-button" onClick={() => { setChannel('ON_CAMPUS'); selectSection('jobs') }}>View On-Campus Jobs <ArrowRight size={16} /></button></section><section className="placement-card channel-summary"><p className="eyebrow">OFF-CAMPUS HIRING</p><h3>External opportunities</h3><p>Listings come from the configured job provider and link to the company application page.</p><button className="secondary-button" onClick={() => { setChannel('OFF_CAMPUS'); selectSection('jobs') }}>Explore Off-Campus Jobs <ExternalLink size={16} /></button></section></div></>}
+    {activeSection === 'profile' && <ProfileEditor profile={profile} completion={completion} saving={saving} uploadingResume={uploadingResume} uploadingPhoto={uploadingPhoto} onChange={setProfile} onSave={() => void saveProfile()} onUploadResume={uploadProfileResume} onUploadPhoto={uploadStudentPhoto} onRemovePhoto={removeStudentPhoto} onNavigate={(destination) => onNavigate?.(destination)} />}
+    {activeSection === 'jobs' && <><section className="placement-card job-filter-panel"><div><p className="eyebrow">JOB BOARD</p><h2>{channel === 'ON_CAMPUS' ? 'On-Campus Hiring' : 'Off-Campus Hiring'}</h2><p className="muted">{channel === 'ON_CAMPUS' ? 'TPO-published placement opportunities.' : 'External jobs from the configured provider.'}</p></div><div className="channel-tabs"><button className={channel === 'ON_CAMPUS' ? 'active' : ''} onClick={() => setChannel('ON_CAMPUS')}>On-Campus</button><button className={channel === 'OFF_CAMPUS' ? 'active' : ''} onClick={() => setChannel('OFF_CAMPUS')}>Off-Campus</button></div><div className="job-filters"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company or role" /><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="">All roles</option>{roles.map((role) => <option key={role}>{role}</option>)}</select><select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option value="">All locations</option>{locations.map((location) => <option key={location}>{location}</option>)}</select><label className="filter-checkbox"><input type="checkbox" checked={eligibleOnly} onChange={(event) => setEligibleOnly(event.target.checked)} />Eligible only</label></div></section>{jobsMessage && <div className="placement-warning">{jobsMessage}</div>}{jobsLoading ? <section className="placement-card placement-loading"><LoaderCircle className="spin" size={24} /><p>Loading opportunities...</p></section> : <div className="job-grid">{visibleJobs.length ? visibleJobs.map((job) => <JobCard key={job.id} job={job} applied={appliedIds.has(job.id)} applying={applyingJobId === job.id} onApply={apply} onProfile={() => selectSection('profile')} onApplications={() => selectSection('applications')} />) : <section className="placement-card empty-placement"><Briefcase size={26} /><h3>No opportunities available.</h3><p>{channel === 'ON_CAMPUS' ? 'Your TPO can publish a drive when one is available.' : 'Check the provider configuration or try again later.'}</p></section>}</div>}</>}
+    {activeSection === 'applications' && <section className="placement-card tracker-panel"><div className="result-header"><div><p className="eyebrow">APPLICATION TRACKER</p><h2>Every opportunity, in one place.</h2><p className="muted">Campus applications are managed in PlaceNexus; off-campus applications link to company sites.</p></div></div><div className="channel-tabs application-tabs"><button className={applicationFilter === 'ALL' ? 'active' : ''} onClick={() => setApplicationFilter('ALL')}>All</button><button className={applicationFilter === 'ON_CAMPUS' ? 'active' : ''} onClick={() => setApplicationFilter('ON_CAMPUS')}>On-Campus</button><button className={applicationFilter === 'OFF_CAMPUS' ? 'active' : ''} onClick={() => setApplicationFilter('OFF_CAMPUS')}>Off-Campus</button></div><div className="tracker-grid">{statuses.map((status) => <div className="tracker-column" key={status}><h4>{status}<span>{filteredApplications.filter((item) => item.status === status).length}</span></h4>{filteredApplications.filter((item) => item.status === status).map((application) => { const url = safeUrl(application.externalApplicationUrl); return <article className="application-card" key={application.id}><strong>{application.job?.companyName || 'Company not provided'}</strong><span>{application.job?.role || 'Role not provided'}</span><small>{application.hiringType === 'ON_CAMPUS' ? 'On-campus' : 'Off-campus'} · Applied {formatDate(application.appliedAt)}</small>{application.hiringType === 'OFF_CAMPUS' && url && <a className="text-button application-external-link" href={url} target="_blank" rel="noopener noreferrer">Open Company Job <ExternalLink size={13} /></a>}</article> })}</div>)}</div></section>}
+    {activeSection === 'notifications' && <section className="placement-card notification-panel"><div className="result-header"><div><p className="eyebrow">IN-APP NOTIFICATIONS</p><h2>Deadlines and profile reminders</h2></div>{unreadCount > 0 && <button className="text-button" onClick={() => void markAll()}>Mark all as read</button>}</div>{notifications.length ? <div className="notification-list">{notifications.map((item) => <article className={'notification-item ' + (item.read ? 'read' : '')} key={item.id}><Bell size={17} /><div><strong>{item.title}</strong><p>{item.message}</p><small>{formatDate(item.createdAt)}</small></div>{!item.read && <button className="text-button" onClick={() => void markRead(item.id)}>Mark read</button>}</article>)}</div> : <div className="empty-placement"><Bell size={26} /><h3>You are all caught up.</h3><p>Placement reminders will appear here.</p></div>}</section>}
   </section>
 }

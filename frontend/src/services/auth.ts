@@ -5,6 +5,7 @@ const AUTH_CHANGE_EVENT = 'placenexus-auth-change'
 export type AuthUser = {
   id: string
   email: string
+  role: 'STUDENT' | 'TPO' | 'ADMIN'
   createdAt: string
 }
 

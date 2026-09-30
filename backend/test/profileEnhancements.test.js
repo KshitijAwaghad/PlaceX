@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import test from 'node:test';
+import { hasValidProfilePhotoSignature, profilePhotoPathFromUrl } from '../src/middleware/upload.js';
+import { emptySocialLinks, normalizeSocialLinks, profileCompletion } from '../src/services/profileService.js';
+
+test('normalizes the canonical optional social links object', () => {
+  const links = normalizeSocialLinks({
+    github: 'https://github.com/student',
+    linkedin: 'http://www.linkedin.com/in/student',
+    portfolio: 'https://portfolio.example/student',
+    leetcode: 'https://leetcode.com/u/student/'
+  });
+
+  assert.deepEqual(links, {
+    github: 'https://github.com/student',
+    linkedin: 'http://www.linkedin.com/in/student',
+    portfolio: 'https://portfolio.example/student',
+    leetcode: 'https://leetcode.com/u/student/'
+  });
+  assert.deepEqual(normalizeSocialLinks({}), emptySocialLinks);
+});
+
+test('rejects unsafe or platform-mismatched social links before persistence', () => {
+  assert.throws(() => normalizeSocialLinks({ github: 'javascript:alert(1)' }), { code: 'INVALID_PROFILE' });
+  assert.throws(() => normalizeSocialLinks({ github: 'https://example.com/student' }), { code: 'INVALID_PROFILE' });
+  assert.throws(() => normalizeSocialLinks({ portfolio: 'data:text/html,unsafe' }), { code: 'INVALID_PROFILE' });
+});
+
+test('profile photo and social links remain optional for profile completion', () => {
+  const completion = profileCompletion({
+    fullName: 'Student', phone: '+919999999999', branch: 'Information Technology', college: 'PlaceNexus College',
+    cgpa: 8, backlogs: 0, graduationYear: 2027, skills: ['React'], projects: [], resume: null,
+    preferredRoles: ['Software Engineer'], preferredLocations: ['Bengaluru'], socialLinks: emptySocialLinks, profilePhotoUrl: null
+  });
+
+  assert.equal(completion.fields.some((field) => field.key === 'socialLinks' || field.key === 'profilePhotoUrl'), false);
+  assert.equal(completion.missingMandatory.length, 0);
+});
+
+test('accepts only image content that matches the claimed profile photo MIME type', () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+  const webp = Buffer.from('RIFF1234WEBPVP8 ', 'ascii');
+
+  assert.equal(hasValidProfilePhotoSignature({ mimetype: 'image/png' }, png), true);
+  assert.equal(hasValidProfilePhotoSignature({ mimetype: 'image/jpeg' }, jpeg), true);
+  assert.equal(hasValidProfilePhotoSignature({ mimetype: 'image/webp' }, webp), true);
+  assert.equal(hasValidProfilePhotoSignature({ mimetype: 'image/png' }, jpeg), false);
+  assert.equal(hasValidProfilePhotoSignature({ mimetype: 'image/png' }, Buffer.from('not an image')), false);
+});
+
+test('maps only generated profile photo URLs to the storage directory', () => {
+  const filename = '123e4567-e89b-12d3-a456-426614174000.png';
+  assert.equal(path.basename(profilePhotoPathFromUrl(`/profile-photos/${filename}`) || ''), filename);
+  assert.equal(profilePhotoPathFromUrl('/profile-photos/../../secrets.txt'), null);
+  assert.equal(profilePhotoPathFromUrl('https://example.com/photo.png'), null);
+});

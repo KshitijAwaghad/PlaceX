@@ -6,11 +6,17 @@ import { fileURLToPath } from 'node:url';
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const uploadDirectory = path.resolve(currentDirectory, '../../uploads/resumes');
+export const profilePhotoDirectory = path.resolve(currentDirectory, '../../uploads/profile-photos');
 fs.mkdirSync(uploadDirectory, { recursive: true });
+fs.mkdirSync(profilePhotoDirectory, { recursive: true });
 
 export const supportedFiles = new Map([
   ['.pdf', 'application/pdf'],
   ['.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.webp', 'image/webp']
+]);
+
+const supportedProfilePhotos = new Map([
   ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.webp', 'image/webp']
 ]);
 
@@ -31,3 +37,57 @@ const fileFilter = (_req, file, callback) => {
 };
 
 export const uploadResume = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+
+const profilePhotoStorage = multer.diskStorage({
+  destination: profilePhotoDirectory,
+  filename: (_req, file, callback) => callback(null, `${randomUUID()}${path.extname(file.originalname).toLowerCase()}`)
+});
+
+const profilePhotoFilter = (_req, file, callback) => {
+  const extension = path.extname(file.originalname).toLowerCase();
+  const expectedMime = supportedProfilePhotos.get(extension);
+  if (!expectedMime || file.mimetype !== expectedMime) {
+    const error = new Error('Profile photos must be JPG, PNG, or WEBP files.');
+    error.code = 'INVALID_PROFILE_PHOTO';
+    return callback(error);
+  }
+  return callback(null, true);
+};
+
+function detectedImageMime(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  return null;
+}
+
+export function hasValidProfilePhotoSignature(file, buffer) {
+  return Boolean(file && buffer && detectedImageMime(buffer) === file.mimetype);
+}
+
+export const uploadProfilePhoto = multer({ storage: profilePhotoStorage, fileFilter: profilePhotoFilter, limits: { fileSize: 3 * 1024 * 1024, files: 1 } });
+
+export async function validateProfilePhotoContent(req, _res, next) {
+  if (!req.file) {
+    const error = new Error('Attach a profile photo using the "photo" field.');
+    error.statusCode = 400;
+    error.code = 'PROFILE_PHOTO_REQUIRED';
+    return next(error);
+  }
+  try {
+    const content = await fs.promises.readFile(req.file.path);
+    if (hasValidProfilePhotoSignature(req.file, content)) return next();
+    const error = new Error('The uploaded file does not contain a valid JPG, PNG, or WEBP image.');
+    error.statusCode = 400;
+    error.code = 'INVALID_PROFILE_PHOTO';
+    throw error;
+  } catch (error) {
+    await fs.promises.unlink(req.file.path).catch(() => {});
+    return next(error);
+  }
+}
+
+export function profilePhotoPathFromUrl(profilePhotoUrl) {
+  const match = /^\/profile-photos\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\.(?:jpe?g|png|webp))$/i.exec(String(profilePhotoUrl || ''));
+  return match ? path.join(profilePhotoDirectory, match[1]) : null;
+}

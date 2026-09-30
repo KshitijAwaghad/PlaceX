@@ -48,8 +48,8 @@ export async function connectDatabase() {
         client = await connectClient(uri);
       } catch (error) {
         const fallbackUri = seedListUri(uri);
-        if (!fallbackUri || error?.code !== 'ECONNREFUSED') throw error;
-        console.warn('MongoDB SRV DNS lookup failed; using the configured Atlas seed-list fallback.');
+        if (!fallbackUri || !/^(ECONNREFUSED|EAI_AGAIN|ENOTFOUND|ETIMEOUT)$/.test(String(error?.code || ''))) throw error;
+        console.warn('MongoDB SRV lookup failed; using the configured Atlas seed-list fallback.');
         client = await connectClient(fallbackUri);
       }
       const database = client.db(process.env.MONGODB_DB_NAME?.trim() || 'placenexus');
@@ -67,7 +67,8 @@ export async function connectDatabase() {
       );
       await database.collection('jobs').createIndexes([
         { key: { deadline: 1 }, name: 'jobs_by_deadline' },
-        { key: { status: 1 }, name: 'jobs_by_status' }
+        { key: { sourceType: 1, jobStatus: 1, deadline: 1 }, name: 'jobs_by_channel_status_deadline' },
+        { key: { source: 1, externalId: 1 }, name: 'unique_external_job_source', unique: true, sparse: true }
       ]);
       await database.collection('applications').createIndexes([
         { key: { userId: 1, jobId: 1 }, name: 'unique_user_job_application', unique: true },

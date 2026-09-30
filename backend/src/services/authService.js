@@ -13,6 +13,7 @@ const googleReadiness = {
 };
 const googleReadyCacheDurationMs = 5 * 60 * 1000;
 const googleUnavailableCacheDurationMs = 30 * 1000;
+export const userRoles = Object.freeze(['STUDENT', 'TPO', 'ADMIN']);
 
 function authError(message, statusCode, code) {
   const error = new Error(message);
@@ -25,8 +26,12 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function userRole(value) {
+  return userRoles.includes(value) ? value : 'STUDENT';
+}
+
 function publicUser(user) {
-  return { id: String(user._id), email: user.email, createdAt: user.createdAt };
+  return { id: String(user._id), email: user.email, role: userRole(user.role), createdAt: user.createdAt };
 }
 
 function getGoogleClientId() {
@@ -167,6 +172,7 @@ export async function registerUser(email, password) {
   const user = {
     _id: randomUUID(),
     email: normalizedEmail,
+    role: 'STUDENT',
     passwordHash: await createPasswordHash(password),
     createdAt: new Date().toISOString()
   };
@@ -234,6 +240,7 @@ export async function authenticateGoogleUser(credential) {
   const newUser = {
     _id: randomUUID(),
     email,
+    role: 'STUDENT',
     googleSubject: payload.sub,
     createdAt: new Date().toISOString()
   };
@@ -252,6 +259,7 @@ export async function createSession(user) {
   const payload = {
     sub: user.id,
     email: user.email,
+    role: user.role,
     exp: Math.floor(Date.now() / 1000) + tokenLifetimeSeconds
   };
   const encodedPayload = encodePayload(payload);

@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { getJobsCollection } from './database.js';
+import { uniqueSkills } from './skillNormalization.js';
+
+export const jobSourceTypes = Object.freeze({ ON_CAMPUS: 'ON_CAMPUS', OFF_CAMPUS: 'OFF_CAMPUS' });
+export const campusJobStatuses = Object.freeze(['DRAFT', 'PUBLISHED', 'UNPUBLISHED', 'CLOSED', 'ARCHIVED']);
 
 function validationError(message) {
   const error = new Error(message);
@@ -9,116 +13,191 @@ function validationError(message) {
 }
 
 function text(value, maxLength) {
-  return String(value || '').trim().slice(0, maxLength);
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function nullableText(value, maxLength) {
+  return text(value, maxLength) || null;
+}
+
+function finiteNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function list(value, maxItems = 30, maxLength = 100) {
   const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
-  return [...new Set(source.map((item) => text(item, maxLength)).filter(Boolean))].slice(0, maxItems);
+  return [...new Set(source.map((item) => text(String(item), maxLength)).filter(Boolean))].slice(0, maxItems);
 }
 
-function date(value) {
+function date(value, label = 'Application deadline', required = false) {
+  if (value === null || value === undefined || value === '') {
+    if (required) throw validationError(`${label} is required.`);
+    return null;
+  }
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) throw validationError('Application deadline must be a valid date.');
+  if (Number.isNaN(parsed.getTime())) throw validationError(`${label} must be a valid date.`);
   return parsed.toISOString();
 }
 
-function number(value, label, min, max, integer = false) {
+function number(value, label, min, max, integer = false, required = false) {
+  if (value === null || value === undefined || value === '') {
+    if (required) throw validationError(`${label} is required.`);
+    return null;
+  }
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < min || parsed > max || (integer && !Number.isInteger(parsed))) throw validationError(`${label} is invalid.`);
   return parsed;
 }
 
-function statusFor(job) {
-  return job.status === 'expired' || new Date(job.deadline).getTime() < Date.now() ? 'expired' : 'active';
+export function safeApplicationUrl(value) {
+  const candidate = text(value, 2_048);
+  if (!candidate) return null;
+  try {
+    const parsed = new URL(candidate);
+    return ['http:', 'https:'].includes(parsed.protocol) && parsed.hostname ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
-function publicJob(job) {
+export function isValidApplicationUrl(value) {
+  return safeApplicationUrl(value) !== null;
+}
+
+function publicStatus(job) {
+  if (job.jobStatus && job.jobStatus !== 'PUBLISHED') return 'expired';
+  if (job.status === 'expired') return 'expired';
+  const deadline = job.deadline ? new Date(job.deadline).getTime() : null;
+  return deadline !== null && !Number.isNaN(deadline) && deadline < Date.now() ? 'expired' : 'active';
+}
+
+export function publicJob(job) {
   if (!job) return null;
   const { _id, createdBy, ...details } = job;
-  return { ...details, id: String(_id), status: statusFor(job) };
+  return {
+    ...details,
+    id: String(_id),
+    sourceType: details.sourceType || jobSourceTypes.ON_CAMPUS,
+    jobStatus: details.jobStatus || 'PUBLISHED',
+    companyName: nullableText(details.companyName, 120),
+    role: nullableText(details.role, 120),
+    jobDescription: nullableText(details.jobDescription, 12_000),
+    ctc: nullableText(details.ctc, 80),
+    ctcLpa: finiteNumberOrNull(details.ctcLpa),
+    salaryMin: finiteNumberOrNull(details.salaryMin),
+    salaryMax: finiteNumberOrNull(details.salaryMax),
+    location: nullableText(details.location, 120),
+    deadline: details.deadline || null,
+    postedAt: details.postedAt || null,
+    applicationUrl: safeApplicationUrl(details.applicationUrl),
+    requiredSkills: uniqueSkills(details.requiredSkills),
+    eligibleBranches: list(details.eligibleBranches),
+    graduationYears: list(details.graduationYears, 10, 4).map(Number).filter(Number.isInteger),
+    minimumCgpa: finiteNumberOrNull(details.minimumCgpa),
+    maximumBacklogs: finiteNumberOrNull(details.maximumBacklogs),
+    employmentType: nullableText(details.employmentType, 80),
+    status: publicStatus(job)
+  };
 }
 
-function normalizedJob(input, partial = false) {
+export function normalizeOnCampusJob(input, partial = false) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw validationError('Job data must be an object.');
   const result = {};
   const fields = [
-    ['companyName', 120], ['role', 120], ['jobDescription', 12_000], ['ctc', 80], ['location', 120], ['additionalCriteria', 1_000]
+    ['companyName', 120], ['role', 120], ['jobDescription', 12_000], ['ctc', 80], ['location', 120], ['additionalCriteria', 1_000], ['employmentType', 80]
   ];
   for (const [field, maxLength] of fields) {
     if (Object.prototype.hasOwnProperty.call(input, field)) result[field] = text(input[field], maxLength);
   }
-  if (Object.prototype.hasOwnProperty.call(input, 'deadline')) result.deadline = date(input.deadline);
+  if (Object.prototype.hasOwnProperty.call(input, 'deadline')) result.deadline = date(input.deadline, 'Application deadline', !partial);
   if (Object.prototype.hasOwnProperty.call(input, 'ctcLpa')) result.ctcLpa = number(input.ctcLpa, 'CTC', 0, 200);
-  if (Object.prototype.hasOwnProperty.call(input, 'minimumCgpa')) result.minimumCgpa = number(input.minimumCgpa, 'Minimum CGPA', 0, 10);
-  if (Object.prototype.hasOwnProperty.call(input, 'maximumBacklogs')) result.maximumBacklogs = number(input.maximumBacklogs, 'Maximum backlogs', 0, 50, true);
+  if (Object.prototype.hasOwnProperty.call(input, 'minimumCgpa')) result.minimumCgpa = number(input.minimumCgpa, 'Minimum CGPA', 0, 10, false, !partial);
+  if (Object.prototype.hasOwnProperty.call(input, 'maximumBacklogs')) result.maximumBacklogs = number(input.maximumBacklogs, 'Maximum backlogs', 0, 50, true, !partial);
   if (Object.prototype.hasOwnProperty.call(input, 'eligibleBranches')) result.eligibleBranches = list(input.eligibleBranches);
   if (Object.prototype.hasOwnProperty.call(input, 'graduationYears')) result.graduationYears = list(input.graduationYears, 10, 4).map(Number).filter(Number.isInteger);
-  if (Object.prototype.hasOwnProperty.call(input, 'requiredSkills')) result.requiredSkills = list(input.requiredSkills, 50);
-  if (Object.prototype.hasOwnProperty.call(input, 'status')) {
-    if (!['active', 'expired'].includes(input.status)) throw validationError('Job status must be active or expired.');
-    result.status = input.status;
-  }
+  if (Object.prototype.hasOwnProperty.call(input, 'requiredSkills')) result.requiredSkills = uniqueSkills(input.requiredSkills).slice(0, 50);
+
   if (!partial) {
     for (const field of ['companyName', 'role', 'jobDescription', 'ctc', 'location', 'deadline']) {
       if (!result[field]) throw validationError(`${field} is required.`);
     }
-    if (!Object.prototype.hasOwnProperty.call(result, 'minimumCgpa')) result.minimumCgpa = 0;
-    if (!Object.prototype.hasOwnProperty.call(result, 'maximumBacklogs')) result.maximumBacklogs = 0;
-    if (!Object.prototype.hasOwnProperty.call(result, 'ctcLpa')) result.ctcLpa = 0;
-    if (!Object.prototype.hasOwnProperty.call(result, 'eligibleBranches')) result.eligibleBranches = [];
-    if (!Object.prototype.hasOwnProperty.call(result, 'graduationYears')) result.graduationYears = [];
-    if (!Object.prototype.hasOwnProperty.call(result, 'requiredSkills')) result.requiredSkills = [];
-    if (!Object.prototype.hasOwnProperty.call(result, 'status')) result.status = 'active';
+    for (const field of ['minimumCgpa', 'maximumBacklogs', 'ctcLpa']) {
+      if (result[field] === null || result[field] === undefined) throw validationError(`${field} is required.`);
+    }
+    if (!Array.isArray(result.eligibleBranches) || !result.eligibleBranches.length) throw validationError('At least one eligible branch is required.');
+    if (!Array.isArray(result.graduationYears) || !result.graduationYears.length) throw validationError('At least one eligible graduation year is required.');
+    if (!Array.isArray(result.requiredSkills)) result.requiredSkills = [];
   }
   return result;
 }
 
-function futureDate(days) {
-  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
-}
-
-const sampleJobs = () => [
-  { companyName: 'Infosys', role: 'System Engineer', jobDescription: 'Build and maintain reliable software services with Java, SQL and REST APIs.', ctc: '₹3.6 LPA', ctcLpa: 3.6, location: 'Pune', deadline: futureDate(7), minimumCgpa: 6, maximumBacklogs: 0, eligibleBranches: ['Computer Engineering', 'Information Technology', 'Electronics and Computer Engineering'], graduationYears: [2027], requiredSkills: ['Java', 'SQL', 'REST APIs'], additionalCriteria: 'Strong communication and problem-solving skills.', status: 'active' },
-  { companyName: 'Accenture', role: 'Associate Software Engineer', jobDescription: 'Deliver full-stack solutions using JavaScript, Node.js and cloud fundamentals.', ctc: '₹4.5 LPA', ctcLpa: 4.5, location: 'Mumbai', deadline: futureDate(3), minimumCgpa: 6.5, maximumBacklogs: 1, eligibleBranches: ['Computer Engineering', 'Information Technology', 'Electronics and Computer Engineering'], graduationYears: [2027], requiredSkills: ['JavaScript', 'Node.js', 'Git'], additionalCriteria: 'Open to rotational shifts.', status: 'active' },
-  { companyName: 'TCS', role: 'Digital Developer', jobDescription: 'Develop scalable web applications and data integrations for enterprise clients.', ctc: '₹7 LPA', ctcLpa: 7, location: 'Pune', deadline: futureDate(10), minimumCgpa: 7, maximumBacklogs: 0, eligibleBranches: ['Computer Engineering', 'Information Technology'], graduationYears: [2027], requiredSkills: ['React', 'Node.js', 'SQL'], additionalCriteria: 'Minimum 60% throughout academics.', status: 'active' },
-  { companyName: 'Capgemini', role: 'Data Analyst', jobDescription: 'Analyze business data, build reports and communicate data-led insights.', ctc: '₹5.2 LPA', ctcLpa: 5.2, location: 'Bengaluru', deadline: futureDate(14), minimumCgpa: 6.5, maximumBacklogs: 0, eligibleBranches: ['Computer Engineering', 'Information Technology', 'Electronics and Computer Engineering'], graduationYears: [2027], requiredSkills: ['SQL', 'Excel', 'Power BI'], additionalCriteria: 'Portfolio project preferred.', status: 'active' }
-];
-
-export async function ensureSampleJobs() {
+export async function purgeLegacyGeneratedJobs() {
   const jobs = await getJobsCollection();
-  if (await jobs.countDocuments({}, { limit: 1 })) return;
-  const now = new Date().toISOString();
-  await jobs.insertMany(sampleJobs().map((job) => ({ _id: randomUUID(), ...job, createdBy: 'system', createdAt: now, updatedAt: now })));
+  // Previous releases marked generated sample rows with this exact shape. Real
+  // TPO and provider rows always have an explicit sourceType.
+  await jobs.deleteMany({ createdBy: 'system', sourceType: { $exists: false } });
+  await jobs.updateMany(
+    { sourceType: { $exists: false }, createdBy: { $ne: 'system' } },
+    { $set: { sourceType: jobSourceTypes.ON_CAMPUS, jobStatus: 'PUBLISHED', updatedAt: new Date().toISOString() } }
+  );
 }
 
-export async function listJobs() {
-  await ensureSampleJobs();
-  const jobs = await (await getJobsCollection()).find({}).sort({ deadline: 1 }).toArray();
+export async function listOnCampusJobs() {
+  await purgeLegacyGeneratedJobs();
+  const jobs = await (await getJobsCollection()).find({ sourceType: jobSourceTypes.ON_CAMPUS, jobStatus: 'PUBLISHED' }).sort({ deadline: 1 }).toArray();
+  return jobs.map(publicJob).filter((job) => job.status === 'active');
+}
+
+export async function listCampusJobsForManagement() {
+  await purgeLegacyGeneratedJobs();
+  const jobs = await (await getJobsCollection()).find({ sourceType: jobSourceTypes.ON_CAMPUS }).sort({ updatedAt: -1 }).toArray();
   return jobs.map(publicJob);
 }
 
 export async function findJob(jobId) {
-  await ensureSampleJobs();
+  await purgeLegacyGeneratedJobs();
   return publicJob(await (await getJobsCollection()).findOne({ _id: jobId }));
 }
 
-export async function createJob(input, adminId) {
-  const job = normalizedJob(input);
+export async function createCampusJob(input, managerId) {
+  const job = normalizeOnCampusJob(input);
   const now = new Date().toISOString();
-  const record = { _id: randomUUID(), ...job, createdBy: adminId, createdAt: now, updatedAt: now };
+  const record = {
+    _id: randomUUID(),
+    ...job,
+    sourceType: jobSourceTypes.ON_CAMPUS,
+    jobStatus: 'DRAFT',
+    applicationUrl: null,
+    createdBy: managerId,
+    createdAt: now,
+    updatedAt: now
+  };
   await (await getJobsCollection()).insertOne(record);
   return publicJob(record);
 }
 
-export async function updateJob(jobId, input) {
-  const changes = normalizedJob(input, true);
-  const jobs = await getJobsCollection();
-  const result = await jobs.findOneAndUpdate({ _id: jobId }, { $set: { ...changes, updatedAt: new Date().toISOString() } }, { returnDocument: 'after' });
+export async function updateCampusJob(jobId, input) {
+  const changes = normalizeOnCampusJob(input, true);
+  const result = await (await getJobsCollection()).findOneAndUpdate(
+    { _id: jobId, sourceType: jobSourceTypes.ON_CAMPUS, jobStatus: { $ne: 'ARCHIVED' } },
+    { $set: { ...changes, updatedAt: new Date().toISOString() } },
+    { returnDocument: 'after' }
+  );
   return publicJob(result);
 }
 
-export async function removeJob(jobId) {
-  const result = await (await getJobsCollection()).deleteOne({ _id: jobId });
-  return result.deletedCount === 1;
+export async function setCampusJobStatus(jobId, jobStatus) {
+  if (!campusJobStatuses.includes(jobStatus)) throw validationError('Campus job status is invalid.');
+  const result = await (await getJobsCollection()).findOneAndUpdate(
+    { _id: jobId, sourceType: jobSourceTypes.ON_CAMPUS },
+    { $set: { jobStatus, updatedAt: new Date().toISOString() } },
+    { returnDocument: 'after' }
+  );
+  return publicJob(result);
+}
+
+export async function archiveCampusJob(jobId) {
+  return setCampusJobStatus(jobId, 'ARCHIVED');
 }

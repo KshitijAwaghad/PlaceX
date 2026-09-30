@@ -1,5 +1,5 @@
 import type { CareerAnalysis, CareerHistoryDetail, CareerHistorySummary, LearningResource, ResumeData } from '../types/career'
-import type { InAppNotification, PlacementApplication, PlacementJob, ProfileCompletion, StudentProfile } from '../types/placement'
+import type { ApplicationTrackingResult, InAppNotification, PlacementApplication, PlacementJob, ProfileCompletion, StudentProfile } from '../types/placement'
 import { clearAuthSession, getAuthToken } from './auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
@@ -160,8 +160,69 @@ export function updateStudentProfile(profile: Partial<StudentProfile>) {
   return request<{ profile: StudentProfile; completion: ProfileCompletion }>('/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) })
 }
 
-export function getPlacementJobs() {
-  return request<{ items: PlacementJob[] }>('/jobs').then((result) => result.items || [])
+export function profilePhotoUrl(value: string | null | undefined) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const relativeUrl = value.startsWith('/')
+  if (relativeUrl && !value.startsWith('/profile-photos/')) return null
+  try {
+    const resolved = new URL(value, API_URL)
+    return ['http:', 'https:'].includes(resolved.protocol) ? resolved.toString() : null
+  } catch { return null }
+}
+
+export function uploadProfilePhoto(file: File) {
+  const body = new FormData()
+  body.append('photo', file)
+  return request<{ profile: StudentProfile; completion: ProfileCompletion }>('/profile/photo', { method: 'POST', body })
+}
+
+export function removeProfilePhoto() {
+  return request<{ profile: StudentProfile; completion: ProfileCompletion }>('/profile/photo', { method: 'DELETE' })
+}
+
+export function getOnCampusJobs() {
+  return request<{ items: PlacementJob[] }>('/jobs/on-campus').then((result) => result.items || [])
+}
+
+export function getOffCampusJobs() {
+  return request<{ items: PlacementJob[]; availability: 'refreshed' | 'cached' | 'not_configured' | 'unavailable'; message: string | null; updatedAt: string | null }>('/jobs/off-campus')
+}
+
+export type CampusJobInput = {
+  companyName: string; role: string; jobDescription: string; ctc: string; ctcLpa: number | null; location: string; deadline: string
+  requiredSkills: string[]; eligibleBranches: string[]; minimumCgpa: number | null; maximumBacklogs: number | null; graduationYears: number[]; employmentType: string; additionalCriteria: string
+}
+
+export function getManagedCampusJobs() {
+  return request<{ items: PlacementJob[] }>('/jobs/manage/on-campus').then((result) => result.items || [])
+}
+
+export function createCampusJob(input: CampusJobInput) {
+  return request<PlacementJob>('/jobs/on-campus', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
+}
+
+export function updateCampusJob(jobId: string, input: Partial<CampusJobInput>) {
+  return request<PlacementJob>(`/jobs/on-campus/${encodeURIComponent(jobId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) })
+}
+
+export function setCampusJobStatus(jobId: string, action: 'publish' | 'unpublish' | 'close') {
+  return request<PlacementJob>(`/jobs/on-campus/${encodeURIComponent(jobId)}/${action}`, { method: 'POST' })
+}
+
+export function archiveCampusJob(jobId: string) {
+  return request<PlacementJob>(`/jobs/on-campus/${encodeURIComponent(jobId)}`, { method: 'DELETE' })
+}
+
+export function getCampusJobApplications(jobId: string) {
+  return request<{ items: PlacementApplication[] }>(`/jobs/on-campus/${encodeURIComponent(jobId)}/applications`).then((result) => result.items || [])
+}
+
+export function getEligibleCampusStudents(jobId: string) {
+  return request<{ items: { studentId: string; profile: Pick<StudentProfile, 'fullName' | 'branch' | 'cgpa' | 'graduationYear'> }[] }>(`/jobs/on-campus/${encodeURIComponent(jobId)}/eligible-students`).then((result) => result.items || [])
+}
+
+export function updateCampusApplicationStatus(applicationId: string, status: string) {
+  return request<PlacementApplication>(`/jobs/manage/applications/${encodeURIComponent(applicationId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) })
 }
 
 export function getApplications() {
@@ -169,11 +230,7 @@ export function getApplications() {
 }
 
 export function applyToPlacementJob(jobId: string) {
-  return request<PlacementApplication>('/applications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId }) })
-}
-
-export function updatePlacementApplication(applicationId: string, changes: Partial<Pick<PlacementApplication, 'status' | 'notes'>>) {
-  return request<PlacementApplication>(`/applications/${encodeURIComponent(applicationId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes) })
+  return request<ApplicationTrackingResult>('/applications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId }) })
 }
 
 export function getNotifications() {
