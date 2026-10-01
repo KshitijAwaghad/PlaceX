@@ -1,5 +1,5 @@
 import type { CareerAnalysis, CareerHistoryDetail, CareerHistorySummary, LearningResource, ResumeData } from '../types/career'
-import type { ApplicationTrackingResult, InAppNotification, PlacementApplication, PlacementJob, ProfileCompletion, StudentProfile } from '../types/placement'
+import type { ApplicationTrackingResult, DriveAnalytics, InAppNotification, PlacementApplication, PlacementJob, ProfileCompletion, StudentProfile, TpoApplication, TpoDashboard, TpoNotification, TpoStudent } from '../types/placement'
 import { clearAuthSession, getAuthToken } from './auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
@@ -219,6 +219,30 @@ export function getCampusJobApplications(jobId: string) {
 
 export function getEligibleCampusStudents(jobId: string) {
   return request<{ items: { studentId: string; profile: Pick<StudentProfile, 'fullName' | 'branch' | 'cgpa' | 'graduationYear'> }[] }>(`/jobs/on-campus/${encodeURIComponent(jobId)}/eligible-students`).then((result) => result.items || [])
+}
+
+export function getCampusDriveAnalytics(jobId: string) {
+  return request<DriveAnalytics>(`/jobs/on-campus/${encodeURIComponent(jobId)}/analytics`)
+}
+
+export function getTpoDashboard() {
+  return request<TpoDashboard>('/tpo/dashboard')
+}
+
+export function getTpoStudents() {
+  return request<{ items: TpoStudent[] }>('/tpo/students').then((result) => result.items || [])
+}
+
+export function getTpoStudent(studentId: string) {
+  return request<TpoStudent>(`/tpo/students/${encodeURIComponent(studentId)}`)
+}
+
+export function getTpoApplications() {
+  return request<{ items: TpoApplication[] }>('/tpo/applications').then((result) => result.items || [])
+}
+
+export function getTpoNotifications() {
+  return request<{ items: TpoNotification[] }>('/tpo/notifications').then((result) => result.items || [])
 }
 
 export function updateCampusApplicationStatus(applicationId: string, status: string) {

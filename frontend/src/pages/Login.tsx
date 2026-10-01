@@ -8,6 +8,9 @@ type LoginPageProps = {
   onLogin: (email: string, password: string) => Promise<void>
   onRegister: (email: string, password: string) => Promise<void>
   onGoogleLogin: (credential: string) => Promise<void>
+  tpoOnly?: boolean
+  onOpenTpoLogin?: () => void
+  onOpenStudentLogin?: () => void
 }
 
 type Mode = 'login' | 'register'
@@ -23,7 +26,7 @@ const placementFeatures = [
 
 const placementFlow = ['Profile', 'Discover', 'Check eligibility', 'Apply', 'Track', 'Prepare']
 
-export default function Login({ onLogin, onRegister, onGoogleLogin }: LoginPageProps) {
+export default function Login({ onLogin, onRegister, onGoogleLogin, tpoOnly = false, onOpenTpoLogin, onOpenStudentLogin }: LoginPageProps) {
   const emailId = useId()
   const passwordId = useId()
   const confirmPasswordId = useId()
@@ -38,8 +41,9 @@ export default function Login({ onLogin, onRegister, onGoogleLogin }: LoginPageP
   const [notice, setNotice] = useState('')
   const [formError, setFormError] = useState('')
 
-  const isRegistration = mode === 'register'
+  const isRegistration = !tpoOnly && mode === 'register'
   const chooseMode = (nextMode: Mode, focusForm = true) => {
+    if (tpoOnly && nextMode === 'register') return
     setMode(nextMode)
     setErrors({})
     setFormError('')
@@ -76,14 +80,14 @@ export default function Login({ onLogin, onRegister, onGoogleLogin }: LoginPageP
             <span className="brand-mark" aria-label="PlaceNexus"><span className="brand-mark-p">P</span><span className="brand-mark-n">N</span></span>
             <span>PlaceNexus <i>AI</i></span>
           </div>
-          <div className="landing-header-actions"><button type="button" className="landing-login-link" onClick={() => chooseMode('login')}>Log in</button><button type="button" className="landing-header-cta" onClick={() => chooseMode('register')}>Get started</button></div>
+          <div className="landing-header-actions"><button type="button" className="landing-login-link" onClick={tpoOnly ? onOpenStudentLogin : () => chooseMode('login')}>{tpoOnly ? 'Student login' : 'Log in'}</button>{!tpoOnly && <button type="button" className="landing-header-cta" onClick={() => chooseMode('register')}>Get started</button>}</div>
         </header>
 
         <div className="login-intro-copy placement-landing-copy">
           <p className="eyebrow">CAREER INTELLIGENCE, MADE PERSONAL</p>
           <h1 id="login-product-heading">Your placement journey, <em>organized.</em></h1>
           <p>Discover on-campus and off-campus opportunities, check your eligibility, track applications, and prepare for your next career move.</p>
-          <div className="landing-hero-actions"><button type="button" className="landing-primary-cta" onClick={() => chooseMode('register')}>Get started <ArrowRight size={16} /></button><button type="button" className="landing-secondary-cta" onClick={() => document.getElementById('platform-overview')?.scrollIntoView({ behavior: 'smooth' })}>Explore platform</button></div>
+          <div className="landing-hero-actions">{tpoOnly ? <button type="button" className="landing-primary-cta" onClick={onOpenStudentLogin}>Student login <ArrowRight size={16} /></button> : <button type="button" className="landing-primary-cta" onClick={() => chooseMode('register')}>Get started <ArrowRight size={16} /></button>}<button type="button" className="landing-secondary-cta" onClick={() => document.getElementById('platform-overview')?.scrollIntoView({ behavior: 'smooth' })}>Explore platform</button></div>
 
           <section className="landing-section landing-overview" id="platform-overview" aria-labelledby="platform-overview-heading">
             <p className="eyebrow">PLACEMENT PLATFORM OVERVIEW</p>
@@ -112,15 +116,15 @@ export default function Login({ onLogin, onRegister, onGoogleLogin }: LoginPageP
             <p>Resume analysis, what-if simulations, a 30-day plan, and saved analyses help you prepare around a target role.</p>
           </section>
 
-          <section className="landing-final-cta"><p>Build a more organized placement journey.</p><button type="button" className="landing-primary-cta" onClick={() => chooseMode('register')}>Get started <ArrowRight size={16} /></button></section>
+          <section className="landing-final-cta"><p>Build a more organized placement journey.</p>{tpoOnly ? <button type="button" className="landing-primary-cta" onClick={onOpenStudentLogin}>Student login <ArrowRight size={16} /></button> : <button type="button" className="landing-primary-cta" onClick={() => chooseMode('register')}>Get started <ArrowRight size={16} /></button>}</section>
         </div>
       </section>
 
       <section className="login-form-area" ref={formRef} aria-labelledby="login-heading">
         <div className="login-card">
-          <p className="eyebrow">PLACE NEXUS ACCOUNT</p>
-          <h2 id="login-heading">{isRegistration ? 'Start your placement journey' : 'Welcome back'}</h2>
-          <p className="login-lede">{isRegistration ? 'Create an account to organize opportunities, eligibility, applications, and preparation in one place.' : 'Sign in to return to your placement workspace.'}</p>
+          <p className="eyebrow">{tpoOnly ? 'TPO / ADMIN ACCESS' : 'PLACE NEXUS ACCOUNT'}</p>
+          <h2 id="login-heading">{tpoOnly ? 'TPO / Admin sign in' : isRegistration ? 'Start your placement journey' : 'Welcome back'}</h2>
+          <p className="login-lede">{tpoOnly ? 'Use your existing PlaceNexus account. Access is confirmed from your server-managed role after authentication.' : isRegistration ? 'Create an account to organize opportunities, eligibility, applications, and preparation in one place.' : 'Sign in to return to your placement workspace.'}</p>
 
           <form noValidate onSubmit={handleSubmit}>
             <div className="login-field"><label htmlFor={emailId}>Email</label><input id={emailId} name="email" type="email" value={email} onChange={(event) => { setEmail(event.target.value); setErrors((current) => ({ ...current, email: undefined })) }} autoComplete="email" inputMode="email" aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? `${emailId}-error` : undefined} />{errors.email && <p id={`${emailId}-error`} className="field-error" role="alert">{errors.email}</p>}</div>
@@ -133,7 +137,9 @@ export default function Login({ onLogin, onRegister, onGoogleLogin }: LoginPageP
           <div className="login-divider"><span>or</span></div>
           <GoogleSignInButton disabled={state === 'loading'} onCredential={onGoogleLogin} />
           {notice && <p id="login-notice" className="login-notice" role="status">{notice}</p>}
-          <p className="signup-copy">{isRegistration ? 'Already have an account?' : 'New to PlaceNexus?'} <button type="button" onClick={() => chooseMode(isRegistration ? 'login' : 'register', false)}>{isRegistration ? 'Sign in' : 'Create account'}</button></p>
+          {tpoOnly
+            ? <p className="signup-copy">Need the student workspace? <button type="button" onClick={onOpenStudentLogin}>Student login</button></p>
+            : <><p className="signup-copy">{isRegistration ? 'Already have an account?' : 'New to PlaceNexus?'} <button type="button" onClick={() => chooseMode(isRegistration ? 'login' : 'register', false)}>{isRegistration ? 'Sign in' : 'Create account'}</button></p><button type="button" className="tpo-login-link" onClick={onOpenTpoLogin}>TPO / Admin Login</button></>}
         </div>
       </section>
     </div>

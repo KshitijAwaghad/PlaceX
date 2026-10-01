@@ -8,9 +8,11 @@ import placementJobRoutes from './routes/placementJobRoutes.js';
 import applicationRoutes from './routes/applicationRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import tpoRoutes from './routes/tpoRoutes.js';
 import { analyzeJobDescription } from './controllers/jobController.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { requireAuth } from './middleware/requireAuth.js';
+import { requireAdmin } from './middleware/requireAdmin.js';
 import { profilePhotoDirectory } from './middleware/upload.js';
 
 const app = express();
@@ -33,6 +35,7 @@ app.use('/profile', requireAuth, profileRoutes);
 app.use('/jobs', requireAuth, placementJobRoutes);
 app.use('/applications', requireAuth, applicationRoutes);
 app.use('/notifications', requireAuth, notificationRoutes);
+app.use('/tpo', requireAuth, requireAdmin, tpoRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

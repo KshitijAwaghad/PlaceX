@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, Clock3, FileText, LoaderCircle, LogOut, Menu, Sparkles, UploadCloud, UserRound, WandSparkles, X } from 'lucide-react'
 import { analyzeResume, getCareerHistory, getCareerHistoryItem, simulateCareer, uploadResume } from '../services/api'
 import PlacementManagement, { type PlacementSection } from '../components/PlacementManagement'
-import TpoJobManagement from '../components/TpoJobManagement'
+import TpoWorkspace from '../components/TpoWorkspace'
 import type { CareerAnalysis, CareerHistorySummary, ResumeData } from '../types/career'
 
-type View = 'placement' | 'profile' | 'jobs' | 'applications' | 'notifications' | 'manageJobs' | 'analyze' | 'simulator' | 'plan' | 'history'
+type View = 'placement' | 'profile' | 'jobs' | 'applications' | 'notifications' | 'analyze' | 'simulator' | 'plan' | 'history'
 
 const viewPaths: Record<View, string> = {
   placement: '/placement-hub', profile: '/profile', jobs: '/jobs', applications: '/applications', notifications: '/notifications',
-  manageJobs: '/tpo/jobs', analyze: '/analyze-fit', simulator: '/what-if-simulator', plan: '/30-day-plan', history: '/saved-analyses'
+  analyze: '/analyze-fit', simulator: '/what-if-simulator', plan: '/30-day-plan', history: '/saved-analyses'
 }
 
 function viewFromPath(): View {
@@ -39,7 +39,7 @@ function BrandIdentity() {
   return <><span className="brand-mark" aria-label="PlaceNexus"><span className="brand-mark-p">P</span><span className="brand-mark-n">N</span></span><span><span className="brand-name">PlaceNexus <i>AI</i></span><span className="brand-subtitle">Career intelligence, made personal</span></span></>
 }
 
-function Dashboard({ isAuthenticated = false, studentEmail, userRole = 'STUDENT', onOpenLogin, onLogout }: { isAuthenticated?: boolean; studentEmail?: string; userRole?: 'STUDENT' | 'TPO' | 'ADMIN'; onOpenLogin?: () => void; onLogout?: () => void }) {
+function StudentDashboard({ isAuthenticated = false, studentEmail, userRole = 'STUDENT', onOpenLogin, onLogout }: { isAuthenticated?: boolean; studentEmail?: string; userRole?: 'STUDENT' | 'TPO' | 'ADMIN'; onOpenLogin?: () => void; onLogout?: () => void }) {
   const [view, setView] = useState<View>(viewFromPath)
   const [resume, setResume] = useState<ResumeData | null>(null)
   const [description, setDescription] = useState('')
@@ -125,7 +125,7 @@ function Dashboard({ isAuthenticated = false, studentEmail, userRole = 'STUDENT'
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to open that saved analysis.') } finally { setBusy(false) }
   }
 
-  const navItems: [View, string][] = [['placement', 'Placement Hub'], ['jobs', 'Jobs'], ['applications', 'Applications'], ...(userRole === 'TPO' || userRole === 'ADMIN' ? [['manageJobs', 'TPO Jobs'] as [View, string]] : []), ['analyze', 'Analyze Fit'], ['simulator', 'What-if Simulator'], ['plan', '30-day Plan'], ['history', 'Saved Analyses']]
+  const navItems: [View, string][] = [['placement', 'Placement Hub'], ['jobs', 'Jobs'], ['applications', 'Applications'], ['analyze', 'Analyze Fit'], ['simulator', 'What-if Simulator'], ['plan', '30-day Plan'], ['history', 'Saved Analyses']]
   const currentPlacementSection = placementSectionFor(view)
   const navigateFromSidebar = (nextView: View) => { navigateTo(nextView); setSidebarOpen(false) }
   const isPrimaryViewActive = (key: View) => view === key || (key === 'placement' && view === 'notifications')
@@ -153,7 +153,6 @@ function Dashboard({ isAuthenticated = false, studentEmail, userRole = 'STUDENT'
       {view === 'simulator' && <section className="single-panel">{analysis ? <><div className="result-header"><div><p className="eyebrow">WHAT-IF SIMULATOR</p><h2>Try on your next skill.</h2><p className="muted">{analysis.missingSkills.length ? 'The projection recomputes the same job-requirement score with a missing skill.' : 'Strengthen an already evidenced skill without inventing new resume evidence.'}</p></div><Score value={simulation?.readinessScore ?? analysis.matchPercentage} label="Projected match" /></div><div className="simulator-form"><label htmlFor="skill">{analysis.missingSkills.length ? 'Add a missing skill' : 'Strengthen a matching skill'}</label><div className="skill-input"><input id="skill" list="role-skills" value={addedSkill} onChange={(event) => setAddedSkill(event.target.value)} placeholder={(analysis.missingSkills.length ? analysis.missingSkills : analysis.matchingSkills)[0] || 'No job skills were extracted'} disabled={!(analysis.missingSkills.length || analysis.matchingSkills.length)} /><datalist id="role-skills">{(analysis.missingSkills.length ? analysis.missingSkills : analysis.matchingSkills).map((skill) => <option key={skill} value={skill} />)}</datalist><button className="primary-button" disabled={busy || !addedSkill.trim() || !(analysis.missingSkills.length ? analysis.missingSkills : analysis.matchingSkills).includes(addedSkill.trim())} onClick={handleSimulation}>{busy ? <LoaderCircle className="spin" size={17} /> : <WandSparkles size={17} />}Run scenario</button></div>{!analysis.missingSkills.length && <p className="muted">All extracted job requirements are already evidenced. Strengthening a skill keeps the projection evidence-based.</p>}{simulation && <div className="simulation-result"><span>Current match: {analysis.matchPercentage}%</span><span>Projected match: {simulation.readinessScore}%</span><strong>{simulation.scoreChange >= 0 ? '+' : ''}{simulation.scoreChange} points</strong><p>{simulation.reason}</p></div>}</div></> : <EmptyState title="Analyze a role first." text="The simulator uses your real resume and role analysis to project a useful change." onClick={() => navigateTo('analyze')} />}</section>}
       {view === 'plan' && <section className="single-panel">{analysis ? <><div className="result-header"><div><p className="eyebrow">PERSONALIZED ROADMAP</p><h2>Your next 30 days.</h2><p className="muted">{analysis.missingSkills.length ? 'A practical plan around the gaps with the most role impact.' : 'A plan to strengthen your existing strengths and prove them with better evidence.'}</p></div><span className="plan-badge">4 weeks</span></div><div className="plan-list">{analysis.plan30Days.map((step) => <article className="plan-step" key={step.week}><span className="week-number">0{step.week}</span><div><p className="eyebrow">WEEK {step.week}</p><h3>{step.title}</h3><p><b>Goal:</b> {step.goal}</p><ul>{step.tasks.map((task) => <li key={task}>{task}</li>)}</ul><small><b>Evidence:</b> {step.expectedEvidence}</small><small><b>Interview:</b> {step.interviewPreparation}</small>{step.resources.length > 0 && <div className="resources"><p className="eyebrow">FREE RESOURCES</p>{step.resources.map((resource) => <a href={resource.url} target="_blank" rel="noreferrer" key={resource.url}><b>{resource.title}</b><span>{resource.resourceType} · {resource.provider} · {resource.estimatedLearningTime}</span><small>{resource.description}</small></a>)}</div>}</div></article>)}</div></> : <EmptyState title="Your plan starts with an analysis." text="Once we understand the role, we’ll turn your gaps into four focused weeks." onClick={() => navigateTo('analyze')} />}</section>}
       {view === 'history' && <section className="single-panel"><div className="result-header"><div><p className="eyebrow">CAREER HISTORY</p><h2>Saved role analyses.</h2><p className="muted">Reopen a previous resume-to-role comparison whenever you need it.</p></div><Clock3 size={26} /></div>{historyLoading ? <div className="empty-result"><LoaderCircle className="spin" size={28} /><p>Loading your saved analyses…</p></div> : history.length ? <div className="plan-list">{history.map((item) => <article className="plan-step" key={item.id}><span className="week-number">{item.matchPercentage}%</span><div><p className="eyebrow">{new Date(item.createdAt).toLocaleDateString()}</p><h3>{item.resumeName}</h3><p>{item.jobPreview}</p>{item.missingSkills.length > 0 && <div className="skill-list">{item.missingSkills.slice(0, 4).map((skill) => <span className="skill-pill gap" key={skill}><X size={13} />{skill}</span>)}</div>}<button className="text-button" disabled={busy} onClick={() => openHistoryItem(item.id)}>Open analysis <ArrowRight size={16} /></button></div></article>)}</div> : <EmptyState title="No saved analyses yet." text="Your next role analysis will be saved here automatically." onClick={() => navigateTo('analyze')} />}</section>}
-      {view === 'manageJobs' && (userRole === 'TPO' || userRole === 'ADMIN') && <TpoJobManagement />}
       {currentPlacementSection && <PlacementManagement section={currentPlacementSection} onSectionChange={(nextSection) => navigateTo(viewForPlacementSection(nextSection))} onNavigate={navigateTo} />}
     </main><footer>PlaceNexus AI <span>•</span> Built for a sharper career move</footer>
   </div>
@@ -163,4 +162,9 @@ function Dashboard({ isAuthenticated = false, studentEmail, userRole = 'STUDENT'
 
 function Metric({ name, value }: { name: string; value: number }) { return <div><span>{name}</span><strong>{value}%</strong><div className="bar"><i style={{ width: `${value}%` }} /></div></div> }
 function EmptyState({ title, text, onClick }: { title: string; text: string; onClick: () => void }) { return <div className="empty-result"><Sparkles size={28} /><h2>{title}</h2><p>{text}</p><button className="text-button" onClick={onClick}>Go to analysis <ArrowRight size={16} /></button></div> }
-export default Dashboard
+export default function Dashboard(props: { isAuthenticated?: boolean; studentEmail?: string; userRole?: 'STUDENT' | 'TPO' | 'ADMIN'; onOpenLogin?: () => void; onLogout?: () => void }) {
+  if (props.userRole === 'TPO' || props.userRole === 'ADMIN') {
+    return <TpoWorkspace user={{ email: props.studentEmail, role: props.userRole }} onLogout={props.onLogout || (() => {})} />
+  }
+  return <StudentDashboard {...props} />
+}

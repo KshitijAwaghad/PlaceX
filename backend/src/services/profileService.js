@@ -1,4 +1,4 @@
-import { getStudentProfilesCollection } from './database.js';
+import { getStudentProfilesCollection, getUsersCollection } from './database.js';
 import { normalizeLocations, normalizeProfileSkills, normalizeRoles } from './profileNormalization.js';
 
 function validationError(message) {
@@ -181,6 +181,40 @@ export async function getStudentProfile(user) {
 export async function listStudentProfiles() {
   const profiles = await (await getStudentProfilesCollection()).find({}).toArray();
   return profiles.map((profile) => ({ ...profile, id: String(profile._id) }));
+}
+
+export async function listActiveStudentProfiles() {
+  const profiles = await (await getStudentProfilesCollection()).find({ userId: { $exists: true, $ne: '' } }).toArray();
+  const userIds = [...new Set(profiles.map((profile) => String(profile.userId)).filter(Boolean))];
+  if (!userIds.length) return [];
+
+  // Accounts created before roles were introduced are treated as students,
+  // matching the auth service's existing default-role behavior.
+  const studentUsers = await (await getUsersCollection()).find(
+    { _id: { $in: userIds }, role: { $in: ['STUDENT', null] } },
+    { projection: { _id: 1 } }
+  ).toArray();
+  const activeStudentIds = new Set(studentUsers.map((user) => String(user._id)));
+  return profiles
+    // The same mandatory fields used by the student workspace determine whether
+    // a profile represents a usable student record for TPO analytics.
+    .filter((profile) => activeStudentIds.has(String(profile.userId)) && profileCompletion(profile).missingMandatory.length === 0)
+    .map((profile) => ({ ...profile, id: String(profile._id) }));
+}
+
+export async function listStudentProfilesForTpo() {
+  const [profiles, users] = await Promise.all([
+    (await getStudentProfilesCollection()).find({ userId: { $exists: true, $ne: '' } }).toArray(),
+    (await getUsersCollection()).find(
+      { role: { $in: ['STUDENT', null] } },
+      { projection: { _id: 1 } }
+    ).toArray()
+  ]);
+  const profilesByUserId = new Map(profiles.map((profile) => [String(profile.userId), profile]));
+  return users.map((user) => {
+    const profile = profilesByUserId.get(String(user._id)) || {};
+    return { ...profile, userId: String(user._id), id: profile._id ? String(profile._id) : null };
+  });
 }
 
 export async function updateStudentProfile(user, input) {

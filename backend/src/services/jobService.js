@@ -162,7 +162,9 @@ export async function findJob(jobId) {
 }
 
 export async function createCampusJob(input, managerId) {
-  const job = normalizeOnCampusJob(input);
+  // A drive begins as a draft, so the TPO can save work before every official
+  // criterion is known. Publishing performs the complete validation below.
+  const job = normalizeOnCampusJob(input, true);
   const now = new Date().toISOString();
   const record = {
     _id: randomUUID(),
@@ -190,7 +192,15 @@ export async function updateCampusJob(jobId, input) {
 
 export async function setCampusJobStatus(jobId, jobStatus) {
   if (!campusJobStatuses.includes(jobStatus)) throw validationError('Campus job status is invalid.');
-  const result = await (await getJobsCollection()).findOneAndUpdate(
+  const jobs = await getJobsCollection();
+  if (jobStatus === 'PUBLISHED') {
+    const existing = await jobs.findOne({ _id: jobId, sourceType: jobSourceTypes.ON_CAMPUS });
+    if (!existing) return null;
+    // Validate the stored canonical fields, including jobDescription, before a
+    // draft becomes visible to students.
+    normalizeOnCampusJob(existing);
+  }
+  const result = await jobs.findOneAndUpdate(
     { _id: jobId, sourceType: jobSourceTypes.ON_CAMPUS },
     { $set: { jobStatus, updatedAt: new Date().toISOString() } },
     { returnDocument: 'after' }

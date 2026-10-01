@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { clearAuthSession, getCurrentUser, getStoredSession, onAuthChange, registerAccount, saveAuthSession, signInAccount, signInWithGoogle } from '../services/auth'
+import { clearAuthSession, getCurrentUser, getStoredSession, onAuthChange, registerAccount, saveAuthSession, signInAccount, signInWithGoogle, type AuthSession } from '../services/auth'
 
 export function useAuth() {
   const [session, setSession] = useState(getStoredSession)
@@ -28,22 +28,27 @@ export function useAuth() {
     return () => { cancelled = true }
   }, [])
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, accessAllowed?: (user: AuthSession['user']) => boolean) => {
     const nextSession = await signInAccount(email, password)
+    if (accessAllowed && !accessAllowed(nextSession.user)) throw new Error('This account does not have TPO/Admin access.')
     saveAuthSession(nextSession)
     setSession(nextSession)
+    return nextSession.user
   }, [])
 
   const register = useCallback(async (email: string, password: string) => {
     const nextSession = await registerAccount(email, password)
     saveAuthSession(nextSession)
     setSession(nextSession)
+    return nextSession.user
   }, [])
 
-  const loginWithGoogle = useCallback(async (credential: string) => {
+  const loginWithGoogle = useCallback(async (credential: string, accessAllowed?: (user: AuthSession['user']) => boolean) => {
     const nextSession = await signInWithGoogle(credential)
+    if (accessAllowed && !accessAllowed(nextSession.user)) throw new Error('This account does not have TPO/Admin access.')
     saveAuthSession(nextSession)
     setSession(nextSession)
+    return nextSession.user
   }, [])
 
   const logout = useCallback(() => {

@@ -98,6 +98,40 @@ export type ApplicationTrackingResult = {
   alreadyApplied: boolean
 }
 
+export type DriveAnalyticsStudent = {
+  studentId: string
+  fullName: string
+  branch: string
+  cgpa: number | null
+  skills: string[]
+  matchedSkills: string[]
+  missingSkills: string[]
+  skillMatch: { matchedSkills: number; requiredSkills: number; percentage: number }
+  applicationStatus: string | null
+}
+
+export type DriveSkillGap = { skill: string; studentsMissing: number; percentage: number }
+
+export type DriveAnalytics = {
+  drive: { id: string; companyName: string | null; role: string | null; requiredSkills: string[] }
+  summary: { totalStudents: number; eligible: number; partialMatch: number; notEligible: number; driveEligibilityReadiness: number }
+  skillGaps: DriveSkillGap[]
+  branchAnalysis: {
+    branch: string
+    totalStudents: number
+    eligibleStudents: number
+    partialMatchStudents: number
+    notEligibleStudents: number
+    trainingCandidates: number
+    readinessPercentage: number
+  }[]
+  branchSkillGaps: { branch: string; totalStudents: number; skillGaps: { skill: string; studentsMissing: number }[] }[]
+  trainingPriorities: (DriveSkillGap & { rank: number })[]
+  eligibleStudents: DriveAnalyticsStudent[]
+  trainingCandidates: DriveAnalyticsStudent[]
+  notEligibleStudents: DriveAnalyticsStudent[]
+}
+
 export type InAppNotification = {
   id: string
   type: 'profile' | 'deadline'
@@ -107,3 +141,44 @@ export type InAppNotification = {
   read: boolean
   createdAt: string
 }
+
+export type TpoStudent = {
+  studentId: string
+  fullName: string
+  profilePhotoUrl: string | null
+  branch: string
+  cgpa: number | null
+  backlogs: number | null
+  graduationYear: number | null
+  skills: string[]
+  projects: StudentProject[]
+  resume: { originalName: string; fileType: string; updatedAt: string } | null
+  socialLinks: StudentSocialLinks
+  profileComplete: boolean
+  placementStatus: 'Placed' | 'Seeking placement'
+  applicationCount: number
+  applications: TpoApplication[]
+}
+
+export type TpoApplication = {
+  id: string
+  studentId: string
+  jobId: string
+  status: ApplicationStatus
+  appliedAt: string
+  updatedAt: string
+  job: PlacementJob | null
+  student: Pick<TpoStudent, 'studentId' | 'fullName' | 'branch' | 'cgpa' | 'graduationYear' | 'placementStatus'> | null
+}
+
+export type TpoDashboard = {
+  summary: { totalStudents: number; completeProfiles: number; activeDrives: number; totalApplications: number; shortlistedStudents: number; studentsPlaced: number; studentsSeekingPlacement: number }
+  upcomingDrives: PlacementJob[]
+  recentApplications: TpoApplication[]
+  recentPlacementActivity: TpoApplication[]
+  branchPlacement: { branch: string; totalStudents: number; placedStudents: number; placementPercentage: number }[]
+  applicationStatusDistribution: { status: string; applications: number }[]
+  placementDataModelNote: string
+}
+
+export type TpoNotification = { id: string; type: string; title: string; message: string; createdAt: string | null; relatedJobId: string | null }
