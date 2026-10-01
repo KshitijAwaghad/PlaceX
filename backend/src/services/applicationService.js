@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { getApplicationsCollection } from './database.js';
-import { findJob, jobSourceTypes, safeApplicationUrl } from './jobService.js';
+import { findJob, jobSourceTypes, listCampusJobsForManagement, safeApplicationUrl } from './jobService.js';
 
 const require = createRequire(import.meta.url);
 export const applicationStatuses = require('../../../shared/applicationStatuses.json');
@@ -83,6 +83,39 @@ export async function listApplicationsForCampusJob(jobId) {
   const records = await (await getApplicationsCollection()).find({ jobId, hiringType: jobSourceTypes.ON_CAMPUS }).sort({ updatedAt: -1 }).toArray();
   const job = await findJob(jobId);
   return records.map((record) => ({ ...publicApplication(record, job), studentId: record.userId }));
+}
+
+export async function listCampusApplicationStatuses(jobId) {
+  return (await (await getApplicationsCollection()).find(
+    {
+      jobId,
+      $or: [
+        { hiringType: jobSourceTypes.ON_CAMPUS },
+        { hiringType: { $exists: false } }
+      ]
+    },
+    { projection: { userId: 1, status: 1 } }
+  ).toArray());
+}
+
+export async function listCampusApplicationsForManagement(managedJobs) {
+  const [records, jobs] = await Promise.all([
+    (await getApplicationsCollection()).find(
+      { $or: [{ hiringType: jobSourceTypes.ON_CAMPUS }, { hiringType: { $exists: false } }] },
+      { projection: { _id: 1, userId: 1, jobId: 1, status: 1, appliedAt: 1, updatedAt: 1 } }
+    ).sort({ updatedAt: -1 }).toArray(),
+    Array.isArray(managedJobs) ? managedJobs : listCampusJobsForManagement()
+  ]);
+  const jobsById = new Map(jobs.map((job) => [job.id, job]));
+  return records.map((record) => ({
+    id: String(record._id),
+    studentId: String(record.userId),
+    jobId: record.jobId,
+    status: record.status,
+    appliedAt: record.appliedAt,
+    updatedAt: record.updatedAt,
+    job: jobsById.get(record.jobId) || null
+  }));
 }
 
 export async function findApplication(userId, applicationId) {

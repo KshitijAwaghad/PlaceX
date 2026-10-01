@@ -3,6 +3,7 @@ import {
   archiveCampusPlacementJob,
   closeCampusPlacementJob,
   createCampusPlacementJob,
+  getCampusDriveAnalytics,
   getPlacementJob,
   listCampusJobApplications,
   listEligibleCampusStudents,
@@ -27,6 +28,7 @@ router.post('/on-campus/:jobId/publish', requireAdmin, publishCampusPlacementJob
 router.post('/on-campus/:jobId/unpublish', requireAdmin, unpublishCampusPlacementJob);
 router.post('/on-campus/:jobId/close', requireAdmin, closeCampusPlacementJob);
 router.delete('/on-campus/:jobId', requireAdmin, archiveCampusPlacementJob);
+router.get('/on-campus/:jobId/analytics', requireAdmin, getCampusDriveAnalytics);
 router.get('/on-campus/:jobId/applications', requireAdmin, listCampusJobApplications);
 router.get('/on-campus/:jobId/eligible-students', requireAdmin, listEligibleCampusStudents);
 router.patch('/manage/applications/:applicationId', requireAdmin, updateCampusApplication);

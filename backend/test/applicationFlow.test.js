@@ -69,6 +69,14 @@ test('normalizes a campus job from TPO input without assigning an external URL',
   assert.equal(job.applicationUrl, undefined);
 });
 
+test('allows incomplete drive data to be saved as a draft while retaining the canonical description field', () => {
+  const draft = normalizeOnCampusJob({ companyName: 'Organization', jobDescription: 'Draft description' }, true);
+
+  assert.equal(draft.companyName, 'Organization');
+  assert.equal(draft.jobDescription, 'Draft description');
+  assert.equal(draft.role, undefined);
+});
+
 test('normalizes provider data with catalog-only inferred skills and no fabricated requirements', () => {
   const job = normalizeExternalJob('provider', {
     externalId: 'external-1', companyName: null, role: null, location: null, applicationUrl: 'https://careers.example.com/job',

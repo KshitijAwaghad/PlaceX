@@ -1,8 +1,9 @@
 import { evaluateEligibility } from '../services/eligibilityService.js';
+import { buildDriveAnalytics } from '../services/driveAnalyticsService.js';
 import { archiveCampusJob, createCampusJob, findJob, jobSourceTypes, listCampusJobsForManagement, listOnCampusJobs, setCampusJobStatus, updateCampusJob } from '../services/jobService.js';
 import { listOffCampusJobs } from '../services/offCampusJobService.js';
-import { getStudentProfile, listStudentProfiles } from '../services/profileService.js';
-import { listApplicationsForCampusJob, updateCampusApplicationStatus } from '../services/applicationService.js';
+import { getStudentProfile, listActiveStudentProfiles } from '../services/profileService.js';
+import { listApplicationsForCampusJob, listCampusApplicationStatuses, updateCampusApplicationStatus } from '../services/applicationService.js';
 
 function notFound() {
   const error = new Error('That job was not found.');
@@ -94,7 +95,7 @@ export async function listEligibleCampusStudents(req, res, next) {
   try {
     const job = await findJob(req.params.jobId);
     if (!job || job.sourceType !== jobSourceTypes.ON_CAMPUS) throw notFound();
-    const students = (await listStudentProfiles()).map((profile) => ({
+    const students = (await listActiveStudentProfiles()).map((profile) => ({
       studentId: profile.userId,
       profile,
       eligibility: evaluateEligibility(profile, job)
@@ -113,5 +114,17 @@ export async function updateCampusApplication(req, res, next) {
       throw error;
     }
     return res.status(200).json({ success: true, data: application });
+  } catch (error) { return next(error); }
+}
+
+export async function getCampusDriveAnalytics(req, res, next) {
+  try {
+    const job = await findJob(req.params.jobId);
+    if (!job || job.sourceType !== jobSourceTypes.ON_CAMPUS) throw notFound();
+    const [students, applications] = await Promise.all([
+      listActiveStudentProfiles(),
+      listCampusApplicationStatuses(job.id)
+    ]);
+    return res.status(200).json({ success: true, data: buildDriveAnalytics(job, students, applications) });
   } catch (error) { return next(error); }
 }
