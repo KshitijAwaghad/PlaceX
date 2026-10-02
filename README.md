@@ -1,6 +1,6 @@
 # PlaceNexus 
 
-PlaceNexus compares an uploaded resume with a job description and returns an explainable career analysis, what-if projection, and 30-day roadmap.
+PlaceNexus compares an uploaded resume with a job description and returns an explainable career analysis, what-if projection, and a roadmap.
 
 ## Project layout
 
