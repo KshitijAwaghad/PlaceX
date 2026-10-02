@@ -1,4 +1,16 @@
 {
+  "branchOptions": [
+    { "value": "computer-science-engineering", "label": "Computer Science and Engineering" },
+    { "value": "information-technology", "label": "Information Technology" },
+    { "value": "artificial-intelligence-and-data-science", "label": "Artificial Intelligence and Data Science" },
+    { "value": "artificial-intelligence-and-machine-learning", "label": "Artificial Intelligence and Machine Learning" },
+    { "value": "electronics-and-computer-engineering", "label": "Electronics and Computer Engineering" },
+    { "value": "electronics-and-telecommunication-engineering", "label": "Electronics and Telecommunication Engineering" },
+    { "value": "electrical-engineering", "label": "Electrical Engineering" },
+    { "value": "robotics-and-automation", "label": "Robotics and Automation" },
+    { "value": "mechanical-engineering", "label": "Mechanical Engineering" },
+    { "value": "civil-engineering", "label": "Civil Engineering" }
+  ],
   "skillCategories": [
     { "name": "Programming Languages", "skills": ["C", "C++", "C#", "Java", "Python", "JavaScript", "TypeScript", "Go", "Rust", "Kotlin", "Swift", "PHP", "Ruby", "Dart", "R", "MATLAB", "SQL"] },
     { "name": "Frontend", "skills": ["HTML", "CSS", "React", "Angular", "Vue.js", "Next.js", "Redux", "Tailwind CSS", "Bootstrap", "Material UI", "jQuery"] },

@@ -1,5 +1,10 @@
 import { getStudentProfilesCollection, getUsersCollection } from './database.js';
 import { normalizeLocations, normalizeProfileSkills, normalizeRoles } from './profileNormalization.js';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const profileCatalog = require('../../../shared/profileCatalog.json');
+const branchValues = new Set(profileCatalog.branchOptions.map(({ value }) => value));
 
 function validationError(message) {
   const error = new Error(message);
@@ -112,12 +117,16 @@ function projects(value, validateTechnologies = false) {
   }).filter((project) => project.title || project.description || project.technologies.length || project.githubUrl || project.liveUrl);
 }
 
-function normalizePartial(input) {
+export function normalizePartial(input, existingBranch) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw validationError('Profile data must be an object.');
   const next = {};
   if (own(input, 'fullName')) next.fullName = text(input.fullName, 120);
   if (own(input, 'phone')) next.phone = phone(input.phone);
-  if (own(input, 'branch')) next.branch = text(input.branch, 120);
+  if (own(input, 'branch')) {
+    const branch = text(input.branch, 120);
+    if (branchValues.has(branch)) next.branch = branch;
+    else if (branch !== existingBranch) throw validationError('Choose a valid branch / department.');
+  }
   if (own(input, 'college')) next.college = text(input.college, 160);
   if (own(input, 'cgpa')) next.cgpa = numberOrNull(input.cgpa, 'CGPA', 0, 10);
   if (own(input, 'backlogs')) next.backlogs = numberOrNull(input.backlogs, 'Backlogs', 0, 50, true);
@@ -218,8 +227,9 @@ export async function listStudentProfilesForTpo() {
 }
 
 export async function updateStudentProfile(user, input) {
-  const changes = normalizePartial(input);
   const profiles = await getStudentProfilesCollection();
+  const existing = await profiles.findOne({ userId: user.id }, { projection: { branch: 1 } });
+  const changes = normalizePartial(input, existing?.branch);
   const now = new Date().toISOString();
   await profiles.updateOne(
     { userId: user.id },

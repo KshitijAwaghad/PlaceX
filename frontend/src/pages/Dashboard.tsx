@@ -43,6 +43,8 @@ type View =
   | "simulator"
   | "plan"
   | "dsa"
+  | "interviewPrep"
+  | "aptitudePrep"
   | "history";
 
 const viewPaths: Record<View, string> = {
@@ -56,6 +58,8 @@ const viewPaths: Record<View, string> = {
   simulator: "/what-if-simulator",
   plan: "/30-day-plan",
   dsa: "/dsa-preparation",
+  interviewPrep: "/interview-prep",
+  aptitudePrep: "/aptitude-prep",
   history: "/saved-analyses",
 };
 
@@ -332,6 +336,8 @@ function StudentDashboard({
     ["simulator", "What-if Simulator"],
     ["plan", "30-day Plan"],
     ["dsa", "DSA Preparation"],
+    ["interviewPrep", "Interview Prep"],
+    ["aptitudePrep", "Aptitude Prep"],
     ["history", "Saved Analyses"],
   ];
 
@@ -875,6 +881,18 @@ function StudentDashboard({
               </section>
             )}
             {view === "dsa" && <DsaPreparation />}
+            {view === "interviewPrep" && (
+              <section className="single-panel">
+                <h1>Interview Prep</h1>
+                <p>Coming soon.</p>
+              </section>
+            )}
+            {view === "aptitudePrep" && (
+              <section className="single-panel">
+                <h1>Aptitude Prep</h1>
+                <p>Coming soon.</p>
+              </section>
+            )}
             {currentPlacementSection && (
               <PlacementManagement
                 section={currentPlacementSection}

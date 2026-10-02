@@ -2,7 +2,21 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 import { hasValidProfilePhotoSignature, profilePhotoPathFromUrl } from '../src/middleware/upload.js';
-import { emptySocialLinks, normalizeSocialLinks, profileCompletion } from '../src/services/profileService.js';
+import { emptySocialLinks, normalizePartial, normalizeSocialLinks, profileCompletion } from '../src/services/profileService.js';
+import profileCatalog from '../../shared/profileCatalog.json' with { type: 'json' };
+
+test('accepts each canonical branch value and rejects values outside the branch catalog', () => {
+  for (const { value } of profileCatalog.branchOptions) {
+    assert.equal(normalizePartial({ branch: value }).branch, value);
+  }
+  assert.throws(() => normalizePartial({ branch: 'CS' }), { code: 'INVALID_PROFILE' });
+  assert.throws(() => normalizePartial({ branch: 'Computer Science and Engineering' }), { code: 'INVALID_PROFILE' });
+});
+
+test('preserves an unchanged legacy branch without including it in profile updates', () => {
+  assert.deepEqual(normalizePartial({ branch: 'Information Technology' }, 'Information Technology'), {});
+  assert.throws(() => normalizePartial({ branch: 'IT' }, 'Information Technology'), { code: 'INVALID_PROFILE' });
+});
 
 test('normalizes the canonical optional social links object', () => {
   const links = normalizeSocialLinks({
