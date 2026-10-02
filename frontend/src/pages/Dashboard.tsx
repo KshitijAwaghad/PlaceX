@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
+  BookOpen,
   Check,
+  CheckCircle2,
   Clock3,
   FileText,
   LoaderCircle,
   LogOut,
   Menu,
   Sparkles,
+  Target,
   UploadCloud,
   UserRound,
   WandSparkles,
@@ -17,6 +20,7 @@ import {
   analyzeResume,
   getCareerHistory,
   getCareerHistoryItem,
+  getInstantSkillPlan,
   simulateCareer,
   uploadResume,
 } from "../services/api";
@@ -29,6 +33,8 @@ import TpoWorkspace from "../components/TpoWorkspace";
 import type {
   CareerAnalysis,
   CareerHistorySummary,
+  InstantPlanDurationHours,
+  InstantSkillPlan,
   ResumeData,
 } from "../types/career";
 
@@ -43,6 +49,8 @@ type View =
   | "simulator"
   | "plan"
   | "dsa"
+  | "interviewPrep"
+  | "aptitudePrep"
   | "history";
 
 const viewPaths: Record<View, string> = {
@@ -54,12 +62,15 @@ const viewPaths: Record<View, string> = {
   manageJobs: "/tpo/jobs",
   analyze: "/analyze-fit",
   simulator: "/what-if-simulator",
-  plan: "/30-day-plan",
+  plan: "/quick-roadmap",
   dsa: "/dsa-preparation",
+  interviewPrep: "/interview-prep",
+  aptitudePrep: "/aptitude-prep",
   history: "/saved-analyses",
 };
 
 function viewFromPath(): View {
+  if (window.location.pathname === "/30-day-plan") return "plan";
   const match = (Object.entries(viewPaths) as [View, string][]).find(
     ([, path]) => path === window.location.pathname,
   );
@@ -189,6 +200,12 @@ function StudentDashboard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [instantPlan, setInstantPlan] = useState<InstantSkillPlan | null>(null);
+  const [instantDuration, setInstantDuration] =
+    useState<InstantPlanDurationHours>(12);
+  const [instantLoading, setInstantLoading] = useState(false);
+  const [selectedPlanSourceId, setSelectedPlanSourceId] =
+    useState<string>("auto");
   const inputRef = useRef<HTMLInputElement>(null);
   const previousDescription = useRef(description);
 
@@ -198,6 +215,37 @@ function StudentDashboard({
       window.history[replace ? "replaceState" : "pushState"]({}, "", path);
     setView(nextView);
   };
+
+  const loadInstantPlan = async (
+    duration: InstantPlanDurationHours = instantDuration,
+    sourceId: string = selectedPlanSourceId,
+  ) => {
+    setInstantLoading(true);
+    setError("");
+    try {
+      const activeAnalysisId =
+        sourceId === "profile"
+          ? undefined
+          : sourceId !== "auto"
+            ? sourceId
+            : analysis?.historyId;
+      const plan = await getInstantSkillPlan(duration, activeAnalysisId);
+      setInstantPlan(plan);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load quick roadmap.",
+      );
+    } finally {
+      setInstantLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (view === "plan") {
+      void loadInstantPlan(instantDuration, selectedPlanSourceId);
+    }
+  }, [view, analysis?.historyId]);
+
 
   useEffect(() => {
     const handlePopState = () => setView(viewFromPath());
@@ -330,8 +378,10 @@ function StudentDashboard({
       : []),
     ["analyze", "Analyze Fit"],
     ["simulator", "What-if Simulator"],
-    ["plan", "30-day Plan"],
+    ["plan", "Quick Roadmap"],
     ["dsa", "DSA Preparation"],
+    ["interviewPrep", "Interview Prep"],
+    ["aptitudePrep", "Aptitude Prep"],
     ["history", "Saved Analyses"],
   ];
 
@@ -361,8 +411,8 @@ function StudentDashboard({
                 onClick={() => navigateFromSidebar(key)}
               >
                 <span>{label}</span>
-                {key === "plan" && analysis ? (
-                  <span className="tab-dot" aria-label="Plan available" />
+                {key === "plan" && (analysis || instantPlan) ? (
+                  <span className="tab-dot" aria-label="Quick Roadmap available" />
                 ) : null}
               </button>
             ))}
@@ -743,74 +793,285 @@ function StudentDashboard({
             )}
             {view === "plan" && (
               <section className="single-panel">
-                {analysis ? (
-                  <>
-                    <div className="result-header">
-                      <div>
-                        <p className="eyebrow">PERSONALIZED ROADMAP</p>
-                        <h2>Your next 30 days.</h2>
-                        <p className="muted">
-                          {analysis.missingSkills.length
-                            ? "A practical plan around the gaps with the most role impact."
-                            : "A plan to strengthen your existing strengths and prove them with better evidence."}
-                        </p>
+                <div className="instant-plan-workspace">
+                  <div className="result-header">
+                    <div>
+                      <p className="eyebrow">QUICK ROADMAP</p>
+                      <h2>Turn your biggest skill gaps into a focused action plan you can start right now.</h2>
+                    </div>
+                  </div>
+
+                  {/* Plan Source Bar */}
+                  {instantPlan && (
+                    <div className="plan-source-bar">
+                      <div className="plan-source-info">
+                        <span>Based on:</span>
+                        <b>{instantPlan.source.label}</b>
                       </div>
-                      <span className="plan-badge">4 weeks</span>
+                      {history.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "10px", color: "#849087" }}>Source:</span>
+                          <select
+                            className="plan-source-select"
+                            value={selectedPlanSourceId}
+                            onChange={(e) => {
+                              setSelectedPlanSourceId(e.target.value);
+                              void loadInstantPlan(instantDuration, e.target.value);
+                            }}
+                          >
+                            <option value="auto">
+                              {analysis ? "Current Active Analysis" : "Latest Saved Analysis"}
+                            </option>
+                            {history.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.resumeName} ({item.matchPercentage}%)
+                              </option>
+                            ))}
+                            <option value="profile">Your Current Profile</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
-                    <div className="plan-list">
-                      {analysis.plan30Days.map((step) => (
-                        <article className="plan-step" key={step.week}>
-                          <span className="week-number">0{step.week}</span>
-                          <div>
-                            <p className="eyebrow">WEEK {step.week}</p>
-                            <h3>{step.title}</h3>
-                            <p>
-                              <b>Goal:</b> {step.goal}
-                            </p>
-                            <ul>
-                              {step.tasks.map((task) => (
-                                <li key={task}>{task}</li>
-                              ))}
-                            </ul>
-                            <small>
-                              <b>Evidence:</b> {step.expectedEvidence}
-                            </small>
-                            <small>
-                              <b>Interview:</b> {step.interviewPreparation}
-                            </small>
-                            {step.resources.length > 0 && (
-                              <div className="resources">
-                                <p className="eyebrow">FREE RESOURCES</p>
-                                {step.resources.map((resource) => (
-                                  <a
-                                    href={resource.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    key={resource.url}
-                                  >
-                                    <b>{resource.title}</b>
-                                    <span>
-                                      {resource.resourceType} ·{" "}
-                                      {resource.provider} ·{" "}
-                                      {resource.estimatedLearningTime}
-                                    </span>
-                                    <small>{resource.description}</small>
-                                  </a>
-                                ))}
-                              </div>
-                            )}
+                  )}
+
+                  {/* Loading State */}
+                  {instantLoading ? (
+                    <div className="instant-loading-card">
+                      <LoaderCircle className="spin" size={32} color="#8fae32" />
+                      <h3>BUILDING YOUR QUICK ROADMAP...</h3>
+                      <div className="loading-progression">
+                        <div className="loading-progression-step done">
+                          <CheckCircle2 size={15} />
+                          <span>Analyzing your skill gaps</span>
+                        </div>
+                        <div className="loading-progression-step done">
+                          <CheckCircle2 size={15} />
+                          <span>Prioritizing what matters most</span>
+                        </div>
+                        <div className="loading-progression-step">
+                          <Clock3 size={15} />
+                          <span>Building your action steps</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : instantPlan && instantPlan.steps.length === 0 ? (
+                    /* Empty / Edge Case */
+                    <div className="empty-result">
+                      <Sparkles size={32} />
+                      <h2>No skill gaps detected</h2>
+                      <p>
+                        {instantPlan.message ||
+                          "Your current profile doesn't have enough detected skill gaps to build a personalized quick roadmap."}
+                      </p>
+                      <div style={{ display: "flex", gap: "10px", marginTop: "18px" }}>
+                        <button className="primary-button" onClick={() => navigateTo("analyze")}>
+                          Analyze a Target Role
+                        </button>
+                        <button className="secondary-button" onClick={() => navigateTo("profile")}>
+                          Update Profile & Target Roles
+                        </button>
+                      </div>
+                    </div>
+                  ) : instantPlan ? (
+                    <>
+                      {/* Top Skill Gaps */}
+                      {instantPlan.missingSkills.length > 0 && (
+                        <div className="gaps-container">
+                          <p className="eyebrow" style={{ margin: 0 }}>YOUR TOP SKILL GAPS</p>
+                          <div className="gaps-list">
+                            {instantPlan.missingSkills.map((gap) => (
+                              <span className="gap-chip" key={gap.name}>
+                                <span className={`chip-priority ${gap.priority.toLowerCase()}`}>
+                                  {gap.priority}
+                                </span>
+                                {gap.name}
+                              </span>
+                            ))}
                           </div>
-                        </article>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <EmptyState
-                    title="Your plan starts with an analysis."
-                    text="Once we understand the role, we’ll turn your gaps into four focused weeks."
-                    onClick={() => navigateTo("analyze")}
-                  />
-                )}
+                        </div>
+                      )}
+
+                      {/* Time Options Selector */}
+                      <div className="duration-selector-section">
+                        <p className="eyebrow" style={{ margin: 0 }}>HOW MUCH TIME DO YOU HAVE?</p>
+                        <div className="duration-buttons">
+                          {([6, 12, 18] as const).map((hours) => (
+                            <button
+                              key={hours}
+                              type="button"
+                              className={`duration-btn ${instantDuration === hours ? "active" : ""}`}
+                              onClick={() => {
+                                setInstantDuration(hours);
+                                void loadInstantPlan(hours, selectedPlanSourceId);
+                              }}
+                            >
+                              <span>{hours} HOURS</span>
+                              <span className="duration-tag">
+                                {hours === 6
+                                  ? "Sprint"
+                                  : hours === 12
+                                  ? "Recommended"
+                                  : "Comprehensive"}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Generated Action Steps */}
+                      <div>
+                        <div className="section-heading" style={{ marginBottom: "16px" }}>
+                          <div>
+                            <p className="eyebrow">YOUR {instantPlan.durationHours}-HOUR QUICK ROADMAP</p>
+                            <h2>Actionable Steps & Practice</h2>
+                          </div>
+                          <span className="step-duration-pill">
+                            {instantPlan.durationHours} Hours Total
+                          </span>
+                        </div>
+
+                        <div className="plan-steps-feed">
+                          {instantPlan.steps.map((step) => {
+                            const hoursDisplay =
+                              step.durationMinutes >= 60
+                                ? `${(step.durationMinutes / 60).toFixed(step.durationMinutes % 60 === 0 ? 0 : 1)} ${
+                                    step.durationMinutes === 60 ? "hour" : "hours"
+                                  }`
+                                : `${step.durationMinutes} min`;
+
+                            return (
+                              <article className="step-card" key={`${step.order}-${step.skill}`}>
+                                <div className="step-card-header">
+                                  <div className="step-card-title-group">
+                                    <span className="step-num-badge">
+                                      {step.order < 10 ? `0${step.order}` : step.order}
+                                    </span>
+                                    <div>
+                                      <h3>{step.skill}</h3>
+                                      <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#68766d" }}>
+                                        {step.title}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="step-card-meta">
+                                    <span className={`priority ${step.priority.toLowerCase()}`}>
+                                      {step.priority} Priority
+                                    </span>
+                                    <span className="step-duration-pill">
+                                      <Clock3 size={11} style={{ display: "inline", marginRight: "4px" }} />
+                                      {hoursDisplay} ({step.durationMinutes} min)
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="step-sections-grid">
+                                  {/* Learn */}
+                                  <div className="step-subblock">
+                                    <span className="subblock-label">
+                                      <BookOpen size={12} />
+                                      What to Learn
+                                    </span>
+                                    <ul className="subblock-list">
+                                      {step.learn.map((item, i) => (
+                                        <li key={i}>{item}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+
+                                  {/* Practice */}
+                                  <div className="step-subblock">
+                                    <span className="subblock-label">
+                                      <Target size={12} />
+                                      How to Practice
+                                    </span>
+                                    <ul className="subblock-list">
+                                      {step.practice.map((item, i) => (
+                                        <li key={i}>{item}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+
+                                  {/* Outcome */}
+                                  <div className="outcome-box">
+                                    <strong>Expected Outcome</strong>
+                                    {step.outcome}
+                                  </div>
+
+                                  {/* Resources */}
+                                  {Array.isArray(step.resources) && step.resources.length > 0 && (
+                                    <div className="resources">
+                                      <p className="eyebrow">FREE LEARNING RESOURCES</p>
+                                      {step.resources.map((resource) => (
+                                        <a
+                                          href={resource.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          key={resource.url}
+                                        >
+                                          <b>{resource.title}</b>
+                                          <span>
+                                            {resource.resourceType} · {resource.provider} ·{" "}
+                                            {resource.estimatedLearningTime}
+                                          </span>
+                                          <small>{resource.description}</small>
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
+
+                          {/* Final Skill Check */}
+                          {instantPlan.finalSkillCheck && (
+                            <section className="skill-check-card">
+                              <div className="skill-check-header">
+                                <CheckCircle2 size={20} />
+                                <h3>{instantPlan.finalSkillCheck.title}</h3>
+                              </div>
+                              <p>{instantPlan.finalSkillCheck.description}</p>
+
+                              {instantPlan.finalSkillCheck.tasks && instantPlan.finalSkillCheck.tasks.length > 0 && (
+                                <div className="skill-check-tasks">
+                                  <span>Validation Tasks</span>
+                                  <ul>
+                                    {instantPlan.finalSkillCheck.tasks.map((task, i) => (
+                                      <li key={i}>{task}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {instantPlan.finalSkillCheck.questions && instantPlan.finalSkillCheck.questions.length > 0 && (
+                                <div className="skill-check-questions">
+                                  <span>Self-Assessment & Interview Questions</span>
+                                  <ul>
+                                    {instantPlan.finalSkillCheck.questions.map((q, i) => (
+                                      <li key={i}>{q}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </section>
+                          )}
+
+                          {/* Total Plan Time Summary */}
+                          <div className="plan-total-bar">
+                            <div>
+                              <span>Total Quick Roadmap Duration</span>
+                              <small>Exact Allocation Verified</small>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <strong>{instantPlan.durationHours} HOURS</strong>
+                              <small>{instantPlan.totalMinutes} MINUTES</small>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               </section>
             )}
             {view === "history" && (
@@ -875,6 +1136,18 @@ function StudentDashboard({
               </section>
             )}
             {view === "dsa" && <DsaPreparation />}
+            {view === "interviewPrep" && (
+              <section className="single-panel">
+                <h1>Interview Prep</h1>
+                <p>Coming soon.</p>
+              </section>
+            )}
+            {view === "aptitudePrep" && (
+              <section className="single-panel">
+                <h1>Aptitude Prep</h1>
+                <p>Coming soon.</p>
+              </section>
+            )}
             {currentPlacementSection && (
               <PlacementManagement
                 section={currentPlacementSection}

@@ -78,6 +78,10 @@ export async function connectDatabase() {
         { userId: 1, read: 1, createdAt: -1 },
         { name: 'notifications_by_user_and_read' }
       );
+      await database.collection('instant_plans').createIndex(
+        { userId: 1, updatedAt: -1 },
+        { name: 'instant_plans_by_user' }
+      );
       return database;
     })().catch((error) => {
       databasePromise = undefined;
@@ -115,3 +119,8 @@ export async function getApplicationsCollection() {
 export async function getNotificationsCollection() {
   return (await connectDatabase()).collection('notifications');
 }
+
+export async function getInstantPlansCollection() {
+  return (await connectDatabase()).collection('instant_plans');
+}
+

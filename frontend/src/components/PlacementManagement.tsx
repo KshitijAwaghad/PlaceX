@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Bell, Briefcase, Check, ClipboardList, Clock3, ExternalLink, LoaderCircle, MapPin, User, X } from 'lucide-react'
 import applicationStatuses from '../../../shared/applicationStatuses.json'
+import profileCatalog from '../../../shared/profileCatalog.json'
 import '../placement.css'
 import { applyToPlacementJob, getApplications, getNotifications, getOffCampusJobs, getOnCampusJobs, getStudentProfile, markAllNotificationsRead, markNotificationRead, removeProfilePhoto, updateStudentProfile, uploadProfilePhoto, uploadResume } from '../services/api'
 import type { ApplicationStatus, InAppNotification, PlacementApplication, PlacementJob, ProfileCompletion, StudentProfile } from '../types/placement'
@@ -105,7 +106,7 @@ export default function PlacementManagement({ section, onSectionChange, onNaviga
     if (!profile) return
     setSaving(true); setError('')
     try {
-      const result = await updateStudentProfile({ fullName: profile.fullName, phone: profile.phone, branch: profile.branch, college: profile.college, cgpa: profile.cgpa, backlogs: profile.backlogs, graduationYear: profile.graduationYear, skills: profile.skills, projects: profile.projects, preferredRoles: profile.preferredRoles, preferredLocations: profile.preferredLocations, socialLinks: profile.socialLinks })
+      const result = await updateStudentProfile({ fullName: profile.fullName, phone: profile.phone, branch: profileCatalog.branchOptions.some(({ value }) => value === profile.branch) ? profile.branch : undefined, college: profile.college, cgpa: profile.cgpa, backlogs: profile.backlogs, graduationYear: profile.graduationYear, skills: profile.skills, projects: profile.projects, preferredRoles: profile.preferredRoles, preferredLocations: profile.preferredLocations, socialLinks: profile.socialLinks })
       setProfile(result.profile); setCompletion(result.completion); setNotice('Profile saved. Eligibility checks have been updated.')
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save your profile.') } finally { setSaving(false) }
   }

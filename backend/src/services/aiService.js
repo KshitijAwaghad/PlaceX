@@ -1,10 +1,10 @@
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 
-const skillCatalog = [
+export const skillCatalog = [
   ['React', /\breact(?:\.js)?\b/i], ['TypeScript', /\btypescript\b/i], ['JavaScript', /\bjavascript\b/i], ['Node.js', /\bnode(?:\.js)?\b/i], ['Express.js', /\bexpress(?:\.js)?\b/i], ['MongoDB', /\bmongodb\b/i], ['Python', /\bpython\b/i], ['R', /(?:^|[\s,/])r(?=[\s,/.]|$)/i], ['Flask', /\bflask\b/i], ['SQL', /\bsql\b/i], ['MySQL', /\bmysql\b/i], ['PostgreSQL', /\bpostgres(?:ql)?\b/i], ['Excel', /\bexcel(?:\s+(?:vba|macros?))?\b/i], ['Tableau', /\btableau\b/i], ['Power BI', /\bpower\s?bi\b/i], ['Business Intelligence', /\bbusiness intelligence\b|\bbi tools?\b|\bbi dashboards?\b/i], ['Data Cleaning', /\bdata cleaning\b|\bclean(?:ing)? data\b|\bdata wrangling\b|\bclean up\b.{0,35}\b(?:records|data)\b|\bremove(?:d)? outliers\b/i], ['Data Visualization', /\bdata visuali[sz]ation\b|\bvisuali[sz]ation\b/i], ['Data Analysis', /\bdata analys(?:is|t|ing|ics)\b/i], ['Statistical Analysis', /\bstatistical analysis\b|\bstatistics\b/i], ['ETL', /\betl\b|\bextract,? transform,? (?:and )?load\b/i], ['KPIs', /\bkpis?\b|\bkey performance indicators\b|\bbusiness reports?\b|\bperformance metrics?\b/i], ['Problem Solving', /\bproblem[-\s]?solv(?:ing|e)\b|\bsolve\b.{0,35}\bproblems?\b/i], ['REST APIs', /\brest(?:ful)?\s+apis?\b/i], ['Kubernetes', /\bkubernetes\b/i], ['Docker', /\bdocker\b/i], ['AWS', /\baws\b|amazon web services/i], ['System Design', /\bsystem design\b/i], ['Design Systems', /\bdesign systems?\b/i], ['GraphQL', /\bgraphql\b/i], ['Git', /\bgit\b/i], ['CI/CD', /\bci\/?cd\b|continuous integration/i], ['Java', /\bjava\b/i], ['C#', /\bc#\b|c sharp/i], ['C++', /\bc\+\+\b/], ['Redis', /\bredis\b/i], ['Azure', /\bazure\b/i], ['Figma', /\bfigma\b/i], ['Communication', /\bcommunication\b/i], ['Leadership', /\bleadership\b/i], ['Agile', /\bagile\b|scrum/i]
 ];
 
-const resources = {
+export const resources = {
   Tableau: [{ title: 'Learn Tableau for free', resourceType: 'Free Course', provider: 'Tableau', url: 'https://www.tableau.com/en-gb/learn?locale=en_US', free: true, description: 'Official free training videos and data-visualization tutorials.', estimatedLearningTime: '2–4 hours' }],
   'Power BI': [{ title: 'Model data with Power BI', resourceType: 'Free Course', provider: 'Microsoft Learn', url: 'https://learn.microsoft.com/en-us/training/paths/model-data-power-bi/', free: true, description: 'Intermediate modeling, relationships, DAX, and semantic-model practice.', estimatedLearningTime: '5 hours 50 minutes' }],
   R: [{ title: 'Introduction to R', resourceType: 'Documentation', provider: 'R Project', url: 'https://www.r-project.org/about.html', free: true, description: 'Official introduction to R for statistical computing and graphics.', estimatedLearningTime: '2–3 hours' }],
@@ -22,11 +22,11 @@ const resources = {
   'System Design': [{ title: 'System Design Primer', resourceType: 'Practice', provider: 'donnemartin', url: 'https://github.com/donnemartin/system-design-primer', free: true, description: 'Structured study guide with design questions and trade-offs.', estimatedLearningTime: '4–6 hours' }]
 };
 
-const yearsMentioned = (text) => Math.max(0, ...[...text.matchAll(/(\d+)\+?\s+years?/gi)].map((match) => Number(match[1])));
-const jobSkills = (jobDescription) => skillCatalog.filter(([, pattern]) => pattern.test(jobDescription)).map(([name]) => name);
-const patternFor = (skill) => skillCatalog.find(([name]) => name === skill)?.[1];
-const hasSkill = (text, skill) => patternFor(skill)?.test(text) ?? text.toLowerCase().includes(skill.toLowerCase());
-const hasQualificationRequirement = (text) => /\b(bachelor|master|degree|b\.?(?:tech|s|e)|m\.?(?:tech|s|e)|qualification)\b/i.test(text);
+export const yearsMentioned = (text) => Math.max(0, ...[...text.matchAll(/(\d+)\+?\s+years?/gi)].map((match) => Number(match[1])));
+export const jobSkills = (jobDescription) => skillCatalog.filter(([, pattern]) => pattern.test(jobDescription)).map(([name]) => name);
+export const patternFor = (skill) => skillCatalog.find(([name]) => name === skill)?.[1];
+export const hasSkill = (text, skill) => patternFor(skill)?.test(text) ?? text.toLowerCase().includes(skill.toLowerCase());
+export const hasQualificationRequirement = (text) => /\b(bachelor|master|degree|b\.?(?:tech|s|e)|m\.?(?:tech|s|e)|qualification)\b/i.test(text);
 
 function sentenceEvidence(text, skill) {
   const pattern = patternFor(skill);
@@ -37,7 +37,7 @@ function sentenceEvidence(text, skill) {
   return (projectSnippet || firstSnippet || '').slice(0, 240) || null;
 }
 
-function priorityFor(jobDescription, skill) {
+export function priorityFor(jobDescription, skill) {
   const position = jobDescription.search(patternFor(skill));
   const context = position < 0 ? '' : jobDescription.slice(Math.max(0, position - 100), position + 180);
   if (/\b(required|must have|minimum|required skills?)\b/i.test(context)) return 'High';
@@ -205,3 +205,79 @@ export async function analyzeCareer({ resumeText, jobDescription, addedSkills = 
     return fallback;
   }
 }
+
+export async function getGeminiInstantPlan({ missingSkills, prioritizedGaps = [], durationHours = 12, roleContext = '' }) {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  const targetMinutes = durationHours * 60;
+  const prompt = `You are a practical, senior engineering career mentor.
+Generate an intensive, focused, short-term skill action plan for a student.
+
+CRITICAL CONSTRAINTS:
+1. You must ONLY create steps for the student's actual missing skills listed below.
+2. DO NOT invent or substitute other technologies or skills.
+3. Total duration must be exactly ${durationHours} hours (${targetMinutes} minutes).
+4. Organize steps with actionable hands-on sequences: what to learn, how to practice, and expected outcome.
+
+STUDENT'S ACTUAL MISSING SKILLS:
+${missingSkills.map((s) => `- ${s}`).join('\n')}
+
+ROLE / GOAL CONTEXT:
+${roleContext || 'Technical Role'}
+
+SCHEMA REQUIREMENTS:
+Return valid JSON only in this exact shape:
+{
+  "steps": [
+    {
+      "order": 1,
+      "skill": "Exact skill name from the missing skills above",
+      "priority": "High",
+      "durationMinutes": 180,
+      "title": "Concise focused sprint title",
+      "learn": ["3 to 4 specific concepts or topics to understand"],
+      "practice": ["2 to 3 specific hands-on exercises to build or execute"],
+      "outcome": "Concise statement of what the student will be able to do/build"
+    }
+  ],
+  "finalSkillCheck": {
+    "type": "practical_verification",
+    "title": "Final Skill Check",
+    "description": "Short challenge or verification exercise for the student",
+    "tasks": ["2 specific validation tasks to run"],
+    "questions": ["2 self-assessment or interview-style questions on what was learned"]
+  }
+}`;
+
+  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '');
+    throw new Error(`Gemini API returned ${response.status}${details ? `: ${details.slice(0, 240)}` : '.'}`);
+  }
+
+  const responseText = geminiResponseText(await response.json());
+  if (!responseText) throw new Error('Gemini API returned no plan content.');
+  const result = parseJson(responseText);
+  if (!Array.isArray(result?.steps) || result.steps.length === 0) {
+    throw new Error('Gemini API returned an invalid plan structure.');
+  }
+  return result;
+}
+
