@@ -1,4 +1,4 @@
-import type { CareerAnalysis, CareerHistoryDetail, CareerHistorySummary, LearningResource, ResumeData } from '../types/career'
+import type { CareerAnalysis, CareerHistoryDetail, CareerHistorySummary, InstantPlanDurationHours, InstantSkillPlan, LearningResource, ResumeData } from '../types/career'
 import type { ApplicationTrackingResult, DriveAnalytics, InAppNotification, PlacementApplication, PlacementJob, ProfileCompletion, StudentProfile, TpoApplication, TpoDashboard, TpoNotification, TpoStudent } from '../types/placement'
 import { clearAuthSession, getAuthToken } from './auth'
 
@@ -151,6 +151,19 @@ export function getCareerHistory() {
 export function getCareerHistoryItem(historyId: string) {
   return request<unknown>(`/career/history/${encodeURIComponent(historyId)}`).then(normalizeHistoryDetail)
 }
+
+export function getInstantSkillPlan(durationHours: InstantPlanDurationHours = 12, analysisId?: string) {
+  return request<InstantSkillPlan>('/api/plan/instant', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ durationHours, analysisId: analysisId || undefined })
+  })
+}
+
+export function fetchSavedInstantPlan() {
+  return request<InstantSkillPlan>('/api/plan/instant', { method: 'GET' })
+}
+
 
 export function getStudentProfile() {
   return request<{ profile: StudentProfile; completion: ProfileCompletion }>('/profile')
