@@ -35,3 +35,43 @@ export type CareerHistoryDetail = CareerHistorySummary & {
   jobDescription: string
   analysis: CareerAnalysis
 }
+
+export type InstantPlanDurationHours = 6 | 12 | 18
+
+export type InstantPlanSource = {
+  type: 'role_analysis' | 'profile_role' | 'profile' | 'empty'
+  role: string
+  label: string
+  analysisId?: string
+}
+
+export type InstantPlanStep = {
+  order: number
+  skill: string
+  priority: 'High' | 'Medium' | 'Low'
+  durationMinutes: number
+  title: string
+  learn: string[]
+  practice: string[]
+  outcome: string
+  resources?: LearningResource[]
+}
+
+export type InstantSkillCheck = {
+  type: string
+  title: string
+  description: string
+  tasks: string[]
+  questions: string[]
+}
+
+export type InstantSkillPlan = {
+  durationHours: InstantPlanDurationHours
+  source: InstantPlanSource
+  missingSkills: { name: string; priority: 'High' | 'Medium' | 'Low' }[]
+  steps: InstantPlanStep[]
+  finalSkillCheck?: InstantSkillCheck
+  totalMinutes: number
+  message?: string
+}
+

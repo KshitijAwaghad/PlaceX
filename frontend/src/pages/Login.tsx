@@ -21,7 +21,7 @@ const placementFeatures = [
   ['SMART ELIGIBILITY', 'Check your branch, CGPA, backlogs, graduation year, and skills.'],
   ['APPLICATION TRACKING', 'Track each placement application from application to outcome.'],
   ['CAREER INTELLIGENCE', 'Analyze role fit and identify the skills you need next.'],
-  ['PERSONALIZED PREPARATION', 'Build a focused 30-day preparation plan.']
+  ['PERSONALIZED PREPARATION', 'Build a focused Quick Roadmap for your skill gaps.']
 ] as const
 
 const placementFlow = ['Profile', 'Discover', 'Check eligibility', 'Apply', 'Track', 'Prepare']
@@ -113,7 +113,7 @@ export default function Login({ onLogin, onRegister, onGoogleLogin, tpoOnly = fa
           <section className="landing-section landing-intelligence" aria-labelledby="career-intelligence-heading">
             <p className="eyebrow">CAREER INTELLIGENCE</p>
             <h2 id="career-intelligence-heading">Analyze your fit when you are ready to go deeper.</h2>
-            <p>Resume analysis, what-if simulations, a 30-day plan, and saved analyses help you prepare around a target role.</p>
+            <p>Resume analysis, what-if simulations, a Quick Roadmap, and saved analyses help you prepare around a target role.</p>
           </section>
 
           <section className="landing-final-cta"><p>Build a more organized placement journey.</p>{tpoOnly ? <button type="button" className="landing-primary-cta" onClick={onOpenStudentLogin}>Student login <ArrowRight size={16} /></button> : <button type="button" className="landing-primary-cta" onClick={() => chooseMode('register')}>Get started <ArrowRight size={16} /></button>}</section>
